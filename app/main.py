@@ -7,14 +7,23 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
-from . import data, forecast
+from . import data, forecast, llm
 
 ROOT = Path(__file__).resolve().parent.parent
-CACHE_TTL_S = 60 * 60
-DEFAULT = dict(lat=28.6692, lon=77.4538, name="Ghaziabad")   # KIET / Delhi NCR
+CACHE_TTL_S = 30 * 60
+DEFAULT = dict(lat=28.6692, lon=77.4538, name="Ghaziabad")   # Delhi NCR
+
+
+def _safe(fn, *a):
+    try:
+        fn(*a)
+    except Exception as e:  # noqa: BLE001 -- warm-up must never kill the server
+        print("warm-up failed:", repr(e), flush=True)
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -47,13 +56,6 @@ def get_forecast(lat: float, lon: float) -> dict:
     return res
 
 
-def _safe(fn, *a):
-    try:
-        fn(*a)
-    except Exception as e:  # noqa: BLE001 -- warm-up must never kill the server
-        print("warm-up failed:", repr(e), flush=True)
-
-
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(ROOT / "static" / "index.html")
@@ -61,7 +63,10 @@ def index() -> FileResponse:
 
 @app.get("/healthz")
 def healthz() -> dict:
-    return dict(ok=True, openaq_key=bool(os.environ.get("OPENAQ_API_KEY")))
+    return dict(ok=True, openaq_key=bool(os.environ.get("OPENAQ_API_KEY")),
+                llm_backend=llm.BACKEND,
+                llm_model=llm.GEMINI_MODEL if llm.BACKEND == "gemini" else llm.LLM_MODEL,
+                llm_ready=bool(os.environ.get("GEMINI_API_KEY")) or llm.BACKEND == "openai")
 
 
 @app.get("/api/geocode")
@@ -79,3 +84,30 @@ def api_forecast(lat: float = Query(DEFAULT["lat"], ge=-90, le=90),
         return get_forecast(lat, lon)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"forecast failed: {type(e).__name__}: {e}") from e
+
+
+class Ask(BaseModel):
+    question: str = Field(..., min_length=2, max_length=800)
+    lat: float = Field(DEFAULT["lat"], ge=-90, le=90)
+    lon: float = Field(DEFAULT["lon"], ge=-180, le=180)
+    place: str = Field(DEFAULT["name"], max_length=80)
+    history: list[dict] = Field(default_factory=list, max_length=12)
+
+
+@app.post("/api/ask")
+def api_ask(body: Ask) -> StreamingResponse:
+    try:
+        fc = get_forecast(body.lat, body.lon)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"forecast failed: {e}") from e
+    context = llm.build_context(body.place, fc)
+
+    def gen():
+        try:
+            yield from llm.stream_answer(body.question, context, body.history)
+        except Exception as e:  # noqa: BLE001
+            print("ask failed:", repr(e), flush=True)
+            yield "\n\nSorry, something went wrong talking to Gemma. Please try again."
+
+    return StreamingResponse(gen(), media_type="text/plain; charset=utf-8",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

@@ -71,33 +71,44 @@ def _openaq_key() -> str | None:
     return os.environ.get("OPENAQ_API_KEY") or None
 
 
-def find_sensor(lat: float, lon: float, radius_m: int = 25_000) -> dict | None:
-    """Nearest OpenAQ PM2.5 sensor that reported in the last 3 days."""
+def find_sensor(lat: float, lon: float, radius_m: int = 25_000, max_stale_days: int = 10) -> dict | None:
+    """Nearest OpenAQ PM2.5 sensor with recent history.
+
+    The model learns sensor-vs-CAMS behaviour from past weeks and never needs
+    today's reading, so a feed that paused a few days ago is still useful.
+    (OpenAQ's CPCB ingestion for NCR often lags by days.)"""
     key = _openaq_key()
     if not key:
         return None
     js = _get(f"{OPENAQ}/locations", dict(
         coordinates=f"{lat},{lon}", radius=radius_m,
-        parameters_id=PM25_PARAMETER_ID, limit=50), headers={"X-API-Key": key})
-    fresh_after = datetime.now(timezone.utc) - timedelta(days=3)
-    best = None
-    for loc in js.get("results", []):
-        last = ((loc.get("datetimeLast") or {}).get("utc"))
-        if not last or pd.Timestamp(last) < pd.Timestamp(fresh_after):
+        parameters_id=PM25_PARAMETER_ID, limit=100), headers={"X-API-Key": key})
+    fresh_after = pd.Timestamp(datetime.now(timezone.utc) - timedelta(days=max_stale_days))
+
+    def _dist(loc: dict) -> float:
+        if loc.get("distance") is not None:
+            return float(loc["distance"])
+        c = loc.get("coordinates") or {}
+        return 111_000 * ((c.get("latitude", lat) - lat) ** 2 + (c.get("longitude", lon) - lon) ** 2) ** 0.5
+
+    locs = [l for l in js.get("results", [])
+            if (l.get("datetimeLast") or {}).get("utc")
+            and pd.Timestamp(l["datetimeLast"]["utc"]) >= fresh_after]
+    # A location can carry several PM2.5 sensors (old + current hardware); the
+    # location listing does not say which one is live, so ask per location.
+    for loc in sorted(locs, key=_dist)[:6]:
+        sjs = _get(f"{OPENAQ}/locations/{loc['id']}/sensors", {}, headers={"X-API-Key": key})
+        live = [s for s in sjs.get("results", [])
+                if (s.get("parameter") or {}).get("id") == PM25_PARAMETER_ID
+                and (s.get("datetimeLast") or {}).get("utc")
+                and pd.Timestamp(s["datetimeLast"]["utc"]) >= fresh_after]
+        if not live:
             continue
-        sensor = next((s for s in loc.get("sensors", [])
-                       if (s.get("parameter") or {}).get("id") == PM25_PARAMETER_ID), None)
-        if sensor is None:
-            continue
-        dist = loc.get("distance")
-        if dist is None:
-            c = loc.get("coordinates") or {}
-            dist = 111_000 * ((c.get("latitude", lat) - lat) ** 2 + (c.get("longitude", lon) - lon) ** 2) ** 0.5
-        cand = dict(sensor_id=sensor["id"], location_id=loc["id"], name=loc.get("name") or "OpenAQ sensor",
-                    provider=((loc.get("provider") or {}).get("name")), distance_m=float(dist))
-        if best is None or cand["distance_m"] < best["distance_m"]:
-            best = cand
-    return best
+        s = max(live, key=lambda s: pd.Timestamp(s["datetimeLast"]["utc"]))
+        return dict(sensor_id=s["id"], location_id=loc["id"], name=loc.get("name") or "OpenAQ sensor",
+                    provider=((loc.get("provider") or {}).get("name")), distance_m=_dist(loc),
+                    last_utc=s["datetimeLast"]["utc"])
+    return None
 
 
 def fetch_sensor_hours(sensor_id: int, utc_offset_s: int, days: int = PAST_DAYS) -> pd.Series:

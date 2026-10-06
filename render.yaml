@@ -2,21 +2,18 @@ services:
   - type: web
     name: clean-air-walk
     runtime: python
-    plan: standard         # 1 CPU / 2 GB: torch + TabPFN peak ~750 MB, too big for starter's 512 MB.
-                           # $25/month, so the $50 Hacktoberfest credit covers two months.
-    buildCommand: >-
-      pip install --upgrade pip &&
-      pip install torch --index-url https://download.pytorch.org/whl/cpu &&
-      pip install -r requirements.txt &&
-      python warm.py
+    plan: starter          # 0.5 CPU / 512 MB is plenty: Gemma runs via the Gemini API.
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /healthz
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
-      - key: TABPFN_MODEL_CACHE_DIR
-        value: /opt/render/project/src/.model_cache
+      - key: GEMINI_API_KEY
+        sync: false        # free key from https://aistudio.google.com/apikey
       - key: OPENAQ_API_KEY
-        sync: false        # paste your free key from explore.openaq.org in the Render dashboard
-      - key: TABPFN_N_ESTIMATORS
-        value: "4"
+        sync: false        # free key from https://explore.openaq.org
+      - key: LLM_BACKEND
+        value: gemini
+      - key: GEMINI_MODEL
+        value: gemma-4-26b-a4b-it

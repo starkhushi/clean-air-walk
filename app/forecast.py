@@ -1,34 +1,25 @@
-"""Street-level PM2.5 forecast + walk-window finder.
+"""PM2.5 forecast, walk windows and an honest accuracy check.
 
-The global CAMS model forecasts air quality on a ~45 km grid. A real sensor on
-your street often disagrees with it by a factor of two. We let TabPFN (an
-open-weight tabular foundation model) learn, from the last few weeks, how the
-real sensor relates to CAMS + local weather, then apply that to the 5-day
-forecast. A backtest on the most recent 72 observed hours keeps us honest.
+The forecast is the Copernicus CAMS global model (via Open-Meteo). Before
+settling on it we tried to beat it with TabPFN v2 using real CPCB sensors in
+Ghaziabad, Delhi and Noida (6 rolling 72-hour backtests each, Sep 18 - Oct 2,
+2026). Raw CAMS averaged 19.9 µg/m³ error; every TabPFN variant was worse
+(22.3 - 23.1). So the app uses CAMS and shows, for your nearest sensor, how
+close CAMS has been over the last 72 hours.
 """
 from __future__ import annotations
 
-import os
-import threading
 import time
-import warnings
 
 import numpy as np
 import pandas as pd
 
 from . import data
 
-warnings.filterwarnings("ignore", message="Running on CPU with more than")
-warnings.filterwarnings("ignore", category=FutureWarning, module="sklearn")
+WALK_HOURS = range(6, 21)       # windows start 06:00 .. 18:00, end by 20:00
+ACCURACY_HOURS = 72
 
-MAX_TRAIN_ROWS = int(os.environ.get("MAX_TRAIN_ROWS", 600))   # ~25 days of hourly context
-N_ESTIMATORS = int(os.environ.get("TABPFN_N_ESTIMATORS", 4))
-HOLDOUT_HOURS = 72
-MIN_SENSOR_HOURS = 240
-QUANTILES = [0.1, 0.5, 0.9]
-WALK_HOURS = range(6, 21)       # 06:00 .. 20:00 local
-
-# Indian National AQI breakpoints for 24h PM2.5 (µg/m³), used as hourly guide.
+# Indian National AQI breakpoints for PM2.5 (µg/m³), used as an hourly guide.
 BANDS = [(30, "Good", "#2e9e5b"), (60, "Satisfactory", "#8cc152"), (90, "Moderate", "#e8b830"),
          (120, "Poor", "#ee8a2a"), (250, "Very poor", "#d9452f"), (1e9, "Severe", "#8e2a4f")]
 
@@ -40,114 +31,54 @@ def band(pm: float) -> dict:
     return dict(label="Severe", color=BANDS[-1][2])
 
 
-# ---------------------------------------------------------------- model
-_fit_lock = threading.Lock()
-
-
-def _new_model():
-    from tabpfn import TabPFNRegressor
-    from tabpfn.constants import ModelVersion
-    # TabPFN v2: Prior Labs License (Apache 2.0 + attribution) -- openly usable weights.
-    m = TabPFNRegressor.create_default_for_version(ModelVersion.V2)
-    m.set_params(n_estimators=N_ESTIMATORS, device="cpu")
-    return m
-
-
-def _fit_predict(Xtr: pd.DataFrame, ytr: np.ndarray, Xte: pd.DataFrame) -> np.ndarray:
-    """Returns (len(Xte), 3) quantiles in log1p space."""
-    with _fit_lock:
-        m = _new_model()
-        m.fit(Xtr.to_numpy(np.float32), ytr.astype(np.float32))
-        q = m.predict(Xte.to_numpy(np.float32), output_type="quantiles", quantiles=QUANTILES)
-    return np.column_stack([np.asarray(a) for a in q])
-
-
-# ---------------------------------------------------------------- features
-def build_features(weather: pd.DataFrame, cams: pd.DataFrame) -> pd.DataFrame:
-    df = weather.join(cams, how="inner")
-    out = pd.DataFrame(index=df.index)
-    h = df.index.hour
-    out["hour_sin"] = np.sin(2 * np.pi * h / 24)
-    out["hour_cos"] = np.cos(2 * np.pi * h / 24)
-    out["weekend"] = (df.index.dayofweek >= 5).astype(float)
-    out["log_cams_pm25"] = np.log1p(df["cams_pm25"])
-    out["log_cams_pm10"] = np.log1p(df["cams_pm10"])
-    out["temp"] = df["temperature_2m"]
-    out["rh"] = df["relative_humidity_2m"]
-    out["rain"] = df["precipitation"]
-    rad = np.deg2rad(df["wind_direction_10m"])
-    out["wind_u"] = df["wind_speed_10m"] * np.sin(rad)
-    out["wind_v"] = df["wind_speed_10m"] * np.cos(rad)
-    # Old archive hours sometimes lack mixing height; keep it if the recent window is complete.
-    if ("boundary_layer_height" in df
-            and df["boundary_layer_height"].tail(MAX_TRAIN_ROWS + 200).notna().mean() > 0.95):
-        out["log_blh"] = np.log1p(df["boundary_layer_height"].clip(lower=0))
-    # 24h rolling CAMS captures multi-day smog build-up (stubble season).
-    out["log_cams_pm25_24h"] = np.log1p(df["cams_pm25"].rolling(24, min_periods=6).mean())
-    return out.dropna()
-
-
 def _mae(a, b) -> float:
     return float(np.mean(np.abs(np.asarray(a) - np.asarray(b))))
 
 
-# ---------------------------------------------------------------- main entry
 def run(lat: float, lon: float) -> dict:
     t0 = time.time()
     weather, utc_off, tz = data.fetch_weather(lat, lon)
     cams = data.fetch_cams(lat, lon)
-    X = build_features(weather, cams)
-    now = pd.Timestamp.now(tz="UTC").tz_localize(None) + pd.Timedelta(seconds=utc_off)
-    now = now.floor("h")
-    future = X[X.index >= now]
-    cams_future = cams["cams_pm25"].reindex(future.index)
+    now = (pd.Timestamp.now(tz="UTC").tz_localize(None) + pd.Timedelta(seconds=utc_off)).floor("h")
 
-    sensor = data.find_sensor(lat, lon)
-    y = pd.Series(dtype=float)
+    fc = pd.DataFrame(dict(
+        pm25=cams["cams_pm25"],
+        rain=weather["precipitation"].reindex(cams.index),
+        temp=weather["temperature_2m"].reindex(cams.index),
+    ))
+    fc = fc[fc.index >= now].dropna(subset=["pm25"])
+
+    result = dict(lat=lat, lon=lon, timezone=tz, generated_local=str(now),
+                  model="Copernicus CAMS global forecast", sensor=None, accuracy=None, now_reading=None)
+
+    # ---- nearest real sensor: current reading + how good CAMS has been there
+    try:
+        sensor = data.find_sensor(lat, lon)
+    except Exception as e:  # noqa: BLE001 -- the forecast must work without OpenAQ
+        sensor, result["sensor_error"] = None, repr(e)
     if sensor:
-        y = data.fetch_sensor_hours(sensor["sensor_id"], utc_off)
-    hist = X[X.index < now].join(y.rename("y"), how="inner").dropna() if len(y) else pd.DataFrame()
+        result["sensor"] = sensor
+        y = data.fetch_sensor_hours(sensor["sensor_id"], utc_off, days=14)
+        if len(y):
+            result["now_reading"] = dict(pm25=round(float(y.iloc[-1]), 1), time=str(y.index[-1]),
+                                         age_hours=round((now - y.index[-1]) / pd.Timedelta(hours=1), 1),
+                                         **band(float(y.iloc[-1])))
+            both = pd.concat([y.rename("sensor"), cams["cams_pm25"].rename("cams")], axis=1).dropna()
+            both = both[both.index < now].tail(ACCURACY_HOURS)
+            if len(both) >= 24:
+                result["accuracy"] = dict(
+                    hours=int(len(both)), mae=round(_mae(both["cams"], both["sensor"]), 1),
+                    mean_sensor=round(float(both["sensor"].mean()), 1),
+                    bias=round(float((both["cams"] - both["sensor"]).mean()), 1),
+                    series=dict(time=[str(t) for t in both.index],
+                                sensor=both["sensor"].round(1).tolist(),
+                                cams=both["cams"].round(1).tolist()))
 
-    result = dict(lat=lat, lon=lon, timezone=tz, generated_local=str(now), sensor=sensor,
-                  mode="cams", backtest=None, model="CAMS global forecast (no local sensor)")
-
-    if sensor and len(hist) >= MIN_SENSOR_HOURS:
-        feats = list(X.columns)
-        # ---- backtest: train on everything before the last 72 h, score the last 72 h
-        bt_tr, bt_te = hist.iloc[:-HOLDOUT_HOURS].tail(MAX_TRAIN_ROWS), hist.iloc[-HOLDOUT_HOURS:]
-        q = _fit_predict(bt_tr[feats], np.log1p(bt_tr["y"].to_numpy()), bt_te[feats])
-        pred_bt = np.expm1(q[:, 1])
-        cams_bt = np.expm1(bt_te["log_cams_pm25"].to_numpy())
-        ratio = float(np.median(bt_tr["y"] / np.expm1(bt_tr["log_cams_pm25"]).clip(lower=1)))
-        truth = bt_te["y"].to_numpy()
-        inside = float(np.mean((truth >= np.expm1(q[:, 0])) & (truth <= np.expm1(q[:, 2]))))
-        result["backtest"] = dict(
-            hours=int(len(bt_te)), train_rows=int(len(bt_tr)),
-            mae_tabpfn=_mae(pred_bt, truth), mae_cams=_mae(cams_bt, truth),
-            mae_cams_scaled=_mae(cams_bt * ratio, truth), interval_coverage_80=inside,
-            series=dict(time=[str(t) for t in bt_te.index], truth=truth.round(1).tolist(),
-                        tabpfn=pred_bt.round(1).tolist(), cams=cams_bt.round(1).tolist()))
-        # ---- final fit on the most recent rows, forecast the next 5 days
-        tr = hist.tail(MAX_TRAIN_ROWS)
-        qf = np.expm1(_fit_predict(tr[feats], np.log1p(tr["y"].to_numpy()), future[feats]))
-        lo, mid, hi = qf[:, 0], qf[:, 1], qf[:, 2]
-        result.update(mode="tabpfn", model="TabPFN v2 street-level correction of CAMS",
-                      train_rows=int(len(tr)), last_observed=float(hist["y"].iloc[-1]),
-                      last_observed_time=str(hist.index[-1]))
-    else:
-        mid = cams_future.to_numpy()
-        lo, hi = mid * 0.7, mid * 1.4
-        if sensor:
-            result["note"] = f"Sensor found but only {len(hist)} usable hours; showing CAMS."
-
-    fc = pd.DataFrame(dict(lo=lo, pm25=mid, hi=hi, cams=cams_future.to_numpy(),
-                           rain=weather["precipitation"].reindex(future.index).to_numpy(),
-                           temp=weather["temperature_2m"].reindex(future.index).to_numpy()),
-                      index=future.index).clip(lower=0)
     result["forecast"] = dict(time=[str(t) for t in fc.index],
                               **{c: fc[c].round(1).tolist() for c in fc.columns})
     result["windows"] = walk_windows(fc)
-    result["bands"] = [dict(max=hi_ if hi_ < 1e8 else None, label=l, color=c) for hi_, l, c in BANDS]
+    result["slots"] = day_slots(fc)
+    result["bands"] = [dict(max=hi if hi < 1e8 else None, label=l, color=c) for hi, l, c in BANDS]
     result["elapsed_s"] = round(time.time() - t0, 1)
     return result
 
@@ -155,7 +86,7 @@ def run(lat: float, lon: float) -> dict:
 def walk_windows(fc: pd.DataFrame) -> list[dict]:
     """Best and worst 2-hour daylight window for each forecast day."""
     out = []
-    d = fc[fc.index.hour.isin(WALK_HOURS)].copy()
+    d = fc[fc.index.hour.isin(WALK_HOURS)]
     for day, g in d.groupby(d.index.date):
         g = g.sort_index()
         if len(g) < 2:
@@ -172,4 +103,23 @@ def walk_windows(fc: pd.DataFrame) -> list[dict]:
             worst=dict(start=worst_t.strftime("%H:%M"), end=(worst_t + pd.Timedelta(hours=2)).strftime("%H:%M"),
                        pm25=round(worst_pm, 1), **band(worst_pm)),
             day_mean=round(float(g["pm25"].mean()), 1)))
+    return out
+
+
+def day_slots(fc: pd.DataFrame) -> list[dict]:
+    """Every remaining 2-hour daylight slot (06-08, 08-10, ... 18-20) per day."""
+    out = []
+    d = fc[fc.index.hour.isin(WALK_HOURS)]
+    for day, g in d.groupby(d.index.date):
+        slots = []
+        for start in range(6, 20, 2):
+            h = g[(g.index.hour >= start) & (g.index.hour < start + 2)]
+            if len(h) == 0:
+                continue
+            pm = float(round(h["pm25"].mean()))     # whole numbers, so label and number agree
+            slots.append(dict(start=f"{start:02d}:00", end=f"{start + 2:02d}:00", pm25=pm,
+                              temp=round(float(h["temp"].mean()), 1), rain=round(float(h["rain"].sum()), 1),
+                              **band(pm)))
+        if slots:
+            out.append(dict(date=str(day), weekday=pd.Timestamp(day).strftime("%a %d %b"), slots=slots))
     return out
