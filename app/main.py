@@ -104,7 +104,7 @@ def api_ask(body: Ask) -> StreamingResponse:
 
     def gen():
         try:
-            yield from llm.stream_answer(body.question, context, body.history)
+            yield from llm.stream_answer(body.question, context, fc, body.history)
         except Exception as e:  # noqa: BLE001
             print("ask failed:", repr(e), flush=True)
             yield "\n\nSorry, something went wrong talking to Gemma. Please try again."
