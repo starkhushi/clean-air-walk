@@ -66,7 +66,7 @@ def healthz() -> dict:
     return dict(ok=True, openaq_key=bool(os.environ.get("OPENAQ_API_KEY")),
                 llm_backend=llm.BACKEND,
                 llm_model=llm.GEMINI_MODEL if llm.BACKEND == "gemini" else llm.LLM_MODEL,
-                llm_ready=bool(os.environ.get("GEMINI_API_KEY")) or llm.BACKEND == "openai")
+                llm_ready=bool(os.environ.get("GEMINI_API_KEY")) if llm.BACKEND == "gemini" else True)
 
 
 @app.get("/api/geocode")

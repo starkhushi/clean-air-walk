@@ -112,7 +112,9 @@ def _stream_gemini(history: list[dict], user_msg: str) -> Iterator[str]:
 def _stream_openai(history: list[dict], user_msg: str) -> Iterator[str]:
     msgs = [dict(role="system", content=SYSTEM), *history, dict(role="user", content=user_msg)]
     body = dict(model=LLM_MODEL, messages=msgs, temperature=0.3, max_tokens=600, stream=True)
-    headers = {"Authorization": f"Bearer {os.environ.get('LLM_API_KEY', 'none')}"}
+    headers = {"Authorization": f"Bearer {os.environ.get('LLM_API_KEY', 'none')}",
+               # OpenRouter attribution headers (ignored by llama.cpp / Ollama)
+               "HTTP-Referer": "https://github.com/starkhushi/clean-air-walk", "X-Title": "Clean Air Walk"}
     with requests.post(f"{LLM_BASE_URL.rstrip('/')}/chat/completions", json=body, headers=headers,
                        stream=True, timeout=300) as r:
         if r.status_code != 200:

@@ -80,7 +80,8 @@ uvicorn app.main:app
 | `GEMINI_API_KEY` | none | Google AI Studio key for Gemma 4 |
 | `GEMINI_MODEL` | `gemma-4-26b-a4b-it` | Or `gemma-4-31b-it` |
 | `LLM_BACKEND` | `gemini` | `openai` for llama.cpp / Ollama |
-| `LLM_BASE_URL`, `LLM_MODEL` | Ollama defaults | Self-hosted Gemma endpoint |
+| `LLM_BASE_URL`, `LLM_MODEL` | Ollama defaults | Any OpenAI-compatible Gemma endpoint |
+| `LLM_API_KEY` | none | Key for that endpoint, e.g. OpenRouter (`google/gemma-4-31b-it:free`) |
 | `OPENAQ_API_KEY` | none | Enables the sensor reality check |
 
 ## Credits
