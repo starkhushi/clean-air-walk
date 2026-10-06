@@ -20,6 +20,7 @@ import json
 import math
 import os
 import re
+import time
 from collections.abc import Iterator
 from datetime import datetime
 
@@ -27,6 +28,7 @@ import requests
 
 BACKEND = os.environ.get("LLM_BACKEND", "gemini")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemma-4-26b-a4b-it")
+GEMINI_FALLBACK_MODEL = os.environ.get("GEMINI_FALLBACK_MODEL", "gemma-4-31b-it")
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "http://127.0.0.1:11434/v1")   # Ollama default
 LLM_MODEL = os.environ.get("LLM_MODEL", "gemma3:4b")
 MAX_HISTORY = 6
@@ -107,11 +109,64 @@ def _int_or_none(v, lo, hi):
         return None
 
 
-def extract_constraints(question: str, context: str, history: list[dict]) -> dict:
+_HINGLISH = re.compile(r"\b(kal|aaj|shaam|subah|jaana|hai|kya|mujhe|chahiye|dopahar|raat|baje|ghante|kab)\b", re.I)
+_WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+_DAY_RE = {"mon": r"\b(mon|monday|somvar|somvaar)\b", "tue": r"\b(tue|tues|tuesday|mangalvar|mangalvaar)\b",
+           "wed": r"\b(wed|wednesday|budhvar|budhvaar)\b", "thu": r"\b(thu|thur|thurs|thursday|guruvar|guruvaar)\b",
+           "fri": r"\b(fri|friday|shukravar|shukravaar)\b", "sat": r"\b(sat|saturday|shanivar|shanivaar)\b",
+           "sun": r"\b(sun|sunday|ravivar|ravivaar|itvaar)\b"}
+_HI_DAYS = {"सोम": "mon", "मंगल": "tue", "बुध": "wed", "गुरु": "thu", "शुक्र": "fri", "शनि": "sat", "रवि": "sun"}
+
+
+def heuristic_constraints(question: str, fc: dict, history: list[dict]) -> dict:
+    """Keyword fallback when Gemma's extraction call fails (rate limits, outages)."""
+    text = " ".join([m["content"] for m in history if m["role"] == "user"] + [question]).lower()
+    q = question.lower()
+    labels = [d["weekday"] for d in fc["slots"]]
+    today = datetime.fromisoformat(fc["generated_local"]).date()
+    days = []
+    for lab in labels:
+        d = datetime.strptime(f"{lab} {today.year}", "%a %d %b %Y").date()
+        wd = _WEEKDAYS[d.weekday()]
+        if (re.search(_DAY_RE[wd], q) or any(h in question and v == wd for h, v in _HI_DAYS.items())
+                or (("today" in q or "aaj" in q or "आज" in question) and d == today)
+                or (re.search(r"\b(tomorrow|kal)\b", q) or "कल" in question) and (d - today).days == 1
+                or (("weekend" in q or "वीकेंड" in question) and wd in ("sat", "sun"))):
+            days.append(lab)
+    earliest = latest = None
+    if re.search(r"morning|subah|सुबह", text):
+        earliest, latest = 6, 11
+    if re.search(r"afternoon|dopahar|दोपहर", text):
+        earliest, latest = 12, 16
+    if re.search(r"evening|shaam|शाम|after college", text):
+        earliest, latest = 16, 20
+    m = re.search(r"after (\d{1,2})\s*(pm|baje)?", text)
+    if m:
+        h = int(m.group(1))
+        earliest = h + 12 if h < 8 else h
+    dur = 1.0
+    m = re.search(r"(\d+(?:\.\d+)?)\s*(hours?|hrs?|ghante|घंटे)", text)
+    if m:
+        dur = float(m.group(1))
+    elif re.search(r"cricket|football|match", text):
+        dur = 3.0
+    elif re.search(r"(\d+)\s*(min|minute)", text):
+        dur = 0.5
+    sensitive = bool(re.search(r"asthma|दमा|heart|lung|pregnan|child|kid|baby|year old|elderly|grand|dada|nana|दादा|नाना|बुजुर्ग|बच्च", text))
+    lang = "hi" if re.search(r"[ऀ-ॿ]", question) else ("hinglish" if _HINGLISH.search(question) else "en")
+    return dict(activity="going outside", days=days, earliest_hour=earliest, latest_end_hour=latest,
+                duration_hours=dur, sensitive=sensitive, language=lang)
+
+
+def extract_constraints(question: str, context: str, history: list[dict], fc: dict) -> dict:
     convo = "".join(f"{m['role'].upper()}: {m['content']}\n" for m in history)
     prompt = (f"{context}\n\nConversation so far:\n{convo or '(none)'}\n"
               f"LATEST MESSAGE: {question}\n\nJSON:")
     raw = _parse_json(complete(EXTRACT, prompt, max_tokens=300))
+    if not raw:
+        c = heuristic_constraints(question, fc, history)
+        c["source"] = "keywords"
+        return c
     lang = raw.get("language") if raw.get("language") in ("en", "hi", "hinglish") else None
     if lang is None:   # cheap script-based fallback
         lang = "hi" if re.search(r"[ऀ-ॿ]", question) else "en"
@@ -124,7 +179,7 @@ def extract_constraints(question: str, context: str, history: list[dict]) -> dic
                 days=[str(d) for d in (raw.get("days") or []) if isinstance(d, str)],
                 earliest_hour=_int_or_none(raw.get("earliest_hour"), 0, 23),
                 latest_end_hour=_int_or_none(raw.get("latest_end_hour"), 1, 24),
-                duration_hours=dur, sensitive=bool(raw.get("sensitive")), language=lang)
+                duration_hours=dur, sensitive=bool(raw.get("sensitive")), language=lang, source="gemma")
 
 
 # ------------------------------------------------------------------ step 2: verified search
@@ -181,23 +236,63 @@ def find_options(fc: dict, c: dict, k: int = 3) -> tuple[list[dict], list[str]]:
 
 
 # ------------------------------------------------------------------ step 3: explanation
+_answer_cache: dict[tuple, tuple[float, str]] = {}
+ANSWER_TTL_S = 30 * 60
+
+
+def _option_lines(opts: list[dict], c: dict) -> list[str]:
+    lines = []
+    for i, o in enumerate(opts):
+        s, e = int(o["start"][:2]), int(o["end"][:2])
+        latest = e - c["duration_hours"]
+        o["start_txt"] = (f"start at {s:02d}:00" if latest <= s
+                          else f"start between {s:02d}:00 and {int(latest):02d}:{int(round((latest % 1) * 60)):02d}")
+        lines.append(f"{i + 1}) {o['day']}, window {o['start']}-{o['end']} ({o['start_txt']} for a "
+                     f"{c['duration_hours']:g}-hour activity): PM2.5 {o['pm25']:.0f} ({o['band']}), "
+                     f"up to {o['temp']:.0f}°C")
+    return lines
+
+
+def template_answer(opts: list[dict], notes: list[str], c: dict) -> str:
+    """Plain answer from the verified options, used only if Gemma is unreachable."""
+    if not opts:
+        return "Sorry, I couldn't find a forecast slot for that. Try another day or place."
+    a, b = opts[0], (opts[1] if len(opts) > 1 else None)
+    warn = c["sensitive"] and a["pm25"] > SENSITIVE_MAX
+    if c["language"] == "hi":
+        txt = f"सबसे साफ़ समय: **{a['day']}, {a['start']}–{a['end']}**, PM2.5 लगभग {a['pm25']:.0f} ({a['band']})।"
+        if b:
+            txt += f" दूसरा विकल्प: {b['day']}, {b['start']}–{b['end']} (लगभग {b['pm25']:.0f})।"
+        if warn:
+            txt += " संवेदनशील लोगों के लिए यह समय भी बहुत अच्छा नहीं है; हल्की गतिविधि या N95 मास्क पर विचार करें।"
+    elif c["language"] == "hinglish":
+        txt = f"Sabse saaf time: **{a['day']}, {a['start']}–{a['end']}**, PM2.5 lagbhag {a['pm25']:.0f} ({a['band']})."
+        if b:
+            txt += f" Backup: {b['day']}, {b['start']}–{b['end']} (lagbhag {b['pm25']:.0f})."
+        if warn:
+            txt += " Sensitive logon ke liye yeh bhi ideal nahi hai; halki activity ya N95 mask rakhein."
+    else:
+        txt = f"Cleanest option: **{a['day']}, {a['start']}–{a['end']}**, PM2.5 around {a['pm25']:.0f} ({a['band']})."
+        if b:
+            txt += f" Backup: {b['day']}, {b['start']}–{b['end']} (around {b['pm25']:.0f})."
+        if warn:
+            txt += " Even this isn't Good or Satisfactory for sensitive groups; consider a lighter activity or an N95 mask."
+    return txt + "\n\n(Gemma is busy right now, so this is a plain summary of the verified options.)"
+
+
 def stream_answer(question: str, context: str, fc: dict, history: list[dict] | None = None) -> Iterator[str]:
     history = _clean_history(history)
     question = question.strip()[:800]
-    c = extract_constraints(question, context, history)
+    key = (question.lower(), fc["lat"], fc["lon"], fc["generated_local"]) if not history else None
+    if key:
+        hit = _answer_cache.get(key)
+        if hit and time.time() - hit[0] < ANSWER_TTL_S:
+            yield hit[1]
+            return
+
+    c = extract_constraints(question, context, history, fc)
     opts, notes = find_options(fc, c)
-    if opts:
-        lines = []
-        for i, o in enumerate(opts):
-            s, e = int(o["start"][:2]), int(o["end"][:2])
-            latest = e - c["duration_hours"]
-            start_txt = (f"start at {s:02d}:00" if latest <= s
-                         else f"start between {s:02d}:00 and {int(latest):02d}:{int(round((latest % 1) * 60)):02d}")
-            lines.append(f"{i + 1}) {o['day']}, window {o['start']}-{o['end']} ({start_txt} for a "
-                         f"{c['duration_hours']:g}-hour activity): PM2.5 {o['pm25']:.0f} ({o['band']}), "
-                         f"up to {o['temp']:.0f}°C")
-    else:
-        lines = ["(no forecast slots available)"]
+    lines = _option_lines(opts, c) if opts else ["(no forecast slots available)"]
     verified = ("VERIFIED OPTIONS (best first):\n" + "\n".join(lines)
                 + ("\nNOTES: " + " ".join(notes) if notes else "")
                 + f"\nConstraints understood: {json.dumps(c, ensure_ascii=False)}"
@@ -206,7 +301,20 @@ def stream_answer(question: str, context: str, fc: dict, history: list[dict] | N
     convo = "".join(f"{m['role'].upper()}: {m['content']}\n" for m in history)
     prompt = (f"{context}\n\n{verified}\n\nConversation so far:\n{convo or '(none)'}\n"
               f"Question: {question}")
-    yield from stream(EXPLAIN, prompt)
+    parts: list[str] = []
+    try:
+        for chunk in stream(EXPLAIN, prompt):
+            parts.append(chunk)
+            yield chunk
+    except LLMError as e:
+        print("explain failed:", e, flush=True)
+        if not parts:
+            yield template_answer(opts, notes, c)
+        return
+    if key and parts:
+        if len(_answer_cache) > 500:
+            _answer_cache.clear()
+        _answer_cache[key] = (time.time(), "".join(parts))
 
 
 def _clean_history(history: list[dict] | None) -> list[dict]:
@@ -219,8 +327,19 @@ def _clean_history(history: list[dict] | None) -> list[dict]:
 
 
 # ------------------------------------------------------------------ backends
+class LLMError(RuntimeError):
+    pass
+
+
+RETRY_STATUS = {429, 500, 502, 503, 504}
+
+
 def complete(system: str, prompt: str, max_tokens: int = 300) -> str:
-    return "".join(stream(system, prompt, max_tokens=max_tokens, temperature=0.0))
+    try:
+        return "".join(stream(system, prompt, max_tokens=max_tokens, temperature=0.0))
+    except LLMError as e:
+        print("complete failed:", e, flush=True)
+        return ""
 
 
 def stream(system: str, prompt: str, max_tokens: int = 600, temperature: float = 0.3) -> Iterator[str]:
@@ -240,32 +359,44 @@ def _sse_lines(r: requests.Response) -> Iterator[str]:
 def _stream_gemini(system: str, prompt: str, max_tokens: int, temperature: float) -> Iterator[str]:
     key = os.environ.get("GEMINI_API_KEY")
     if not key:
-        yield "The assistant is not configured yet: set GEMINI_API_KEY on the server."
-        return
+        raise LLMError("GEMINI_API_KEY not set")
     body = dict(contents=[dict(role="user", parts=[dict(text=prompt)])],
                 systemInstruction=dict(parts=[dict(text=system)]),
                 generationConfig=dict(temperature=temperature, maxOutputTokens=max_tokens,
                                       thinkingConfig=dict(thinkingLevel="minimal")))
-    url = (f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}"
-           f":streamGenerateContent?alt=sse")
-    for attempt in range(2):     # one retry on transient 5xx
-        with requests.post(url, json=body, headers={"x-goog-api-key": key}, stream=True, timeout=90) as r:
-            if r.status_code >= 500 and attempt == 0:
-                continue
-            if r.status_code != 200:
-                print("gemini error", r.status_code, r.text[:500], flush=True)
-                yield f"Sorry, Gemma is unavailable right now (HTTP {r.status_code}). Please try again in a minute."
-                return
-            for payload in _sse_lines(r):
-                try:
-                    js = json.loads(payload)
-                except json.JSONDecodeError:
+    # Free-tier Gemma endpoints throw sporadic 500/429s: retry with backoff, then try the
+    # other Gemma 4 model (separate quota) before giving up.
+    plan = [(GEMINI_MODEL, 0), (GEMINI_MODEL, 1.5), (GEMINI_FALLBACK_MODEL, 0), (GEMINI_FALLBACK_MODEL, 3)]
+    last = None
+    for model, wait in plan:
+        if not model:
+            continue
+        time.sleep(wait)
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse"
+        try:
+            with requests.post(url, json=body, headers={"x-goog-api-key": key}, stream=True, timeout=60) as r:
+                if r.status_code in RETRY_STATUS:
+                    last = f"{model} HTTP {r.status_code}"
                     continue
-                for cand in js.get("candidates", []):
-                    for part in (cand.get("content") or {}).get("parts", []):
-                        if part.get("text") and not part.get("thought"):
-                            yield part["text"]
-            return
+                if r.status_code != 200:
+                    raise LLMError(f"{model} HTTP {r.status_code}: {r.text[:300]}")
+                got = False
+                for payload in _sse_lines(r):
+                    try:
+                        js = json.loads(payload)
+                    except json.JSONDecodeError:
+                        continue
+                    for cand in js.get("candidates", []):
+                        for part in (cand.get("content") or {}).get("parts", []):
+                            if part.get("text") and not part.get("thought"):
+                                got = True
+                                yield part["text"]
+                if got:
+                    return
+                last = f"{model} returned no text"
+        except requests.RequestException as e:
+            last = f"{model} {type(e).__name__}"
+    raise LLMError(last or "no Gemma model available")
 
 
 def _stream_openai(system: str, prompt: str, max_tokens: int, temperature: float) -> Iterator[str]:
@@ -274,18 +405,28 @@ def _stream_openai(system: str, prompt: str, max_tokens: int, temperature: float
     headers = {"Authorization": f"Bearer {os.environ.get('LLM_API_KEY', 'none')}",
                # OpenRouter attribution headers (ignored by llama.cpp / Ollama)
                "HTTP-Referer": "https://github.com/starkhushi/clean-air-walk", "X-Title": "Clean Air Walk"}
-    with requests.post(f"{LLM_BASE_URL.rstrip('/')}/chat/completions", json=body, headers=headers,
-                       stream=True, timeout=300) as r:
-        if r.status_code != 200:
-            print("llm error", r.status_code, r.text[:500], flush=True)
-            yield f"Sorry, the Gemma server returned HTTP {r.status_code}."
-            return
-        for payload in _sse_lines(r):
-            if payload == "[DONE]":
-                break
-            try:
-                delta = json.loads(payload)["choices"][0]["delta"].get("content")
-            except (json.JSONDecodeError, KeyError, IndexError, TypeError):
-                continue
-            if delta:
-                yield delta
+    for wait in (0, 2):
+        time.sleep(wait)
+        try:
+            with requests.post(f"{LLM_BASE_URL.rstrip('/')}/chat/completions", json=body, headers=headers,
+                               stream=True, timeout=300) as r:
+                if r.status_code in RETRY_STATUS:
+                    continue
+                if r.status_code != 200:
+                    raise LLMError(f"HTTP {r.status_code}: {r.text[:300]}")
+                got = False
+                for payload in _sse_lines(r):
+                    if payload == "[DONE]":
+                        break
+                    try:
+                        delta = json.loads(payload)["choices"][0]["delta"].get("content")
+                    except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+                        continue
+                    if delta:
+                        got = True
+                        yield delta
+                if got:
+                    return
+        except requests.RequestException:
+            continue
+    raise LLMError("Gemma server unavailable")
