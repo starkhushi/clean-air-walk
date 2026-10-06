@@ -71,7 +71,8 @@ uvicorn app.main:app
 ## Deploy on Render
 
 `render.yaml` is a blueprint. In Render choose **New → Blueprint**, pick this repo, and paste
-`GEMINI_API_KEY` and `OPENAQ_API_KEY` when asked. The Starter plan is enough.
+`GEMINI_API_KEY` and `OPENAQ_API_KEY` when asked. The free plan works; it sleeps after 15 idle
+minutes, so the first visit after a pause takes about a minute. Use the Starter plan to stay always-on.
 
 ## Configuration
 

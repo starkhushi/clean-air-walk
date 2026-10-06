@@ -138,7 +138,7 @@ const CHIPS = [
 async function load(lat, lon, name){
   place = {lat, lon, name}; history = []; $('#chat').innerHTML = '';
   $('#status').hidden = false;
-  $('#status').textContent = `Fetching the forecast and nearest sensor for ${name}…`;
+  $('#status').textContent = `Fetching the forecast and nearest sensor for ${name}… (the first load after a quiet spell can take up to a minute)`;
   try{
     const r = await fetch(`/api/forecast?lat=${lat}&lon=${lon}`);
     if(!r.ok) throw new Error((await r.json()).detail || r.statusText);

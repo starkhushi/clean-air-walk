@@ -2,7 +2,9 @@ services:
   - type: web
     name: clean-air-walk
     runtime: python
-    plan: starter          # 0.5 CPU / 512 MB is plenty: Gemma runs via the Gemini API.
+    plan: free             # no card needed; Gemma runs via the Gemini API so the app is light.
+                           # Free services sleep after 15 idle minutes (~1 min cold start).
+                           # Switch to "starter" to stay always-on.
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /healthz
