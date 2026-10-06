@@ -1,5 +1,5 @@
 // Clean Air Walk service worker: makes the app installable and shows the last forecast offline.
-const VERSION = 'caw-v1';
+const VERSION = 'caw-v2';
 const SHELL = ['/', '/manifest.webmanifest', '/static/icons/icon-192.png', '/static/icons/icon-512.png',
                'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js'];
 

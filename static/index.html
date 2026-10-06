@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Clean Air Walk</title>
-<meta name="description" content="Tell Gemma your plan and it finds the cleanest time this week to go outside, from the air-quality forecast and your nearest real sensor.">
+<meta name="description" content="When is the air clean enough to go outside? Ask in English or Hindi. Powered by open-weight Gemma 4.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Devanagari:wght@400;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#2e7d4f">
@@ -14,564 +14,624 @@
 <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 <style>
 :root{
-  --bg:#f4f6f1; --card:#ffffff; --ink:#1d2a22; --muted:#5d6b62; --line:#dde3da;
-  --accent:#2e7d4f; --accent-soft:#e3f1e8; --bubble:#eef2ec;
+  --bg:#f3f6f1; --card:#ffffff; --ink:#17231b; --muted:#5b6a60; --line:#dfe6dc;
+  --accent:#2e7d4f; --accent-ink:#ffffff; --accent-soft:#e2f1e7; --bubble:#eef3ec; --shadow:0 1px 3px rgba(0,0,0,.06);
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --bg:#111613; --card:#1a211c; --ink:#e7eee9; --muted:#9aa89f; --line:#2b352e;
-    --accent:#5fc28a; --accent-soft:#1f3327; --bubble:#232c26;
+    --bg:#0f1411; --card:#18201b; --ink:#e8efea; --muted:#9db0a3; --line:#2a352e;
+    --accent:#5fc28a; --accent-ink:#0f1411; --accent-soft:#1d3226; --bubble:#222c25; --shadow:none;
   }
 }
 :root[data-theme="dark"]{
-  --bg:#111613; --card:#1a211c; --ink:#e7eee9; --muted:#9aa89f; --line:#2b352e;
-  --accent:#5fc28a; --accent-soft:#1f3327; --bubble:#232c26;
+  --bg:#0f1411; --card:#18201b; --ink:#e8efea; --muted:#9db0a3; --line:#2a352e;
+  --accent:#5fc28a; --accent-ink:#0f1411; --accent-soft:#1d3226; --bubble:#222c25; --shadow:none;
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 Inter,"Noto Sans Devanagari",system-ui,sans-serif}
-main{max-width:980px;margin:0 auto;padding:24px 16px 48px}
-h1{font-size:clamp(26px,5vw,38px);margin:0 0 4px;letter-spacing:-.02em}
-h2{margin:0 0 10px;font-size:18px}
-.sub{color:var(--muted);margin:0 0 20px}
-.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;position:relative}
-input,textarea{flex:1 1 220px;padding:11px 14px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font:inherit}
-button{padding:11px 16px;border-radius:10px;border:1px solid var(--accent);background:var(--accent);color:#fff;font:inherit;font-weight:600;cursor:pointer}
-button.ghost{background:transparent;color:var(--accent)}
-button:disabled{opacity:.6;cursor:wait}
-#suggest{position:absolute;top:48px;left:0;right:0;background:var(--card);border:1px solid var(--line);border-radius:10px;z-index:5;display:none;max-width:560px}
-#suggest div{padding:10px 14px;cursor:pointer}#suggest div:hover{background:var(--accent-soft)}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px}
-.pill{display:inline-block;padding:2px 10px;border-radius:999px;color:#fff;font-weight:600;font-size:13px}
-.muted{color:var(--muted)}.small{font-size:13px}
-.days{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
-.day{border:1px solid var(--line);border-radius:12px;padding:12px}
-.day h3{margin:0 0 6px;font-size:15px}
-.day .t{font-size:20px;font-weight:700}
-.chartbox{position:relative;height:280px}
-#chat{display:flex;flex-direction:column;gap:10px;margin:8px 0 12px;max-height:440px;overflow-y:auto}
-.msg{padding:10px 14px;border-radius:12px;max-width:88%;white-space:pre-wrap}
-.msg.user{align-self:flex-end;background:var(--accent);color:#fff}
-.msg.bot{align-self:flex-start;background:var(--bubble)}
-.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-.chip{background:var(--accent-soft);color:var(--ink);border:1px solid var(--line);font-weight:500;padding:7px 12px;font-size:14px}
-form.ask{display:flex;gap:8px}
-form.ask input{min-width:0}
-button.voice{padding:11px 12px;flex:0 0 auto}
-#mic.listening{background:#d9452f;border-color:#d9452f;color:#fff;animation:pulse 1.2s infinite}
-@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(217,69,47,.5)}50%{box-shadow:0 0 0 8px rgba(217,69,47,0)}}
-.voicebar{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:6px;min-height:20px}
-.speak{background:none;border:none;color:var(--accent);padding:2px 4px;margin-left:6px;font-size:15px;cursor:pointer}
-@media (prefers-reduced-motion: reduce){#mic.listening{animation:none}}
-details.profile{border:1px dashed var(--line);border-radius:12px;padding:10px 14px;margin-bottom:12px}
-details.profile summary{cursor:pointer;font-weight:600}
-.pgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px 18px;margin-top:10px}
-.pgrid label{display:flex;gap:8px;align-items:center;font-size:14px}
-.pgrid select{padding:7px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit;font-size:14px}
-.ptag{display:inline-block;margin:6px 6px 0 0;padding:2px 9px;border-radius:999px;background:var(--accent-soft);font-size:13px}
-#offline{display:none;padding:10px 14px;border-radius:10px;background:#fff3cd;color:#5c4400;margin-bottom:16px}
-.skyrow{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
-#skyprev{max-width:180px;max-height:140px;border-radius:10px;display:none}
-#skyout{flex:1 1 260px}
-#skyout .head{font-weight:700;margin-bottom:4px}
-details.safety summary{cursor:pointer;font-weight:600;font-size:17px}
-details.safety li{margin:6px 0}
-#install{display:none}
-.exnow{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
-.exadvice{font-weight:600;font-size:17px}
-.exup{margin:12px 0 4px;display:flex;flex-direction:column;gap:6px}
-.exup div{padding:8px 12px;border-radius:10px;background:var(--accent-soft);font-size:14px}
-.exh{font-size:15px;margin:16px 0 6px}
-.exlist{margin:0;padding-left:20px}.exlist li{margin:4px 0}
-#indoorout{margin-top:10px;max-width:100%}
-.exhelp{padding:10px 12px;border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:6px;font-size:14px}
-.now{display:flex;gap:16px;flex-wrap:wrap;align-items:center}
-.now .big{font-size:clamp(20px,3.6vw,26px);font-weight:700}
-#status{padding:12px 14px;border-radius:10px;background:var(--accent-soft);margin-bottom:16px}
-footer{color:var(--muted);font-size:13px;margin-top:28px}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.55 Inter,"Noto Sans Devanagari",system-ui,sans-serif}
+main{max-width:860px;margin:0 auto;padding:16px 16px 56px}
 a{color:var(--accent)}
+button{font:inherit;cursor:pointer;border-radius:12px}
+.btn{padding:12px 18px;border:2px solid var(--accent);background:var(--accent);color:var(--accent-ink);font-weight:700}
+.btn.ghost{background:transparent;color:var(--accent)}
+.btn:disabled{opacity:.6;cursor:wait}
+input,select{font:inherit;color:var(--ink);background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:12px 14px}
+.muted{color:var(--muted)}.small{font-size:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;margin-bottom:14px;box-shadow:var(--shadow)}
+
+/* top bar */
+.top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.brand{display:flex;align-items:center;gap:8px;font-weight:800;font-size:20px;margin-right:auto}
+.brand img{width:30px;height:30px;border-radius:8px}
+.langsw{display:flex;border:2px solid var(--accent);border-radius:999px;overflow:hidden}
+.langsw button{border:0;border-radius:0;padding:7px 14px;background:transparent;color:var(--accent);font-weight:700}
+.langsw button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.search{display:flex;gap:8px;position:relative;margin-bottom:14px}
+.search input{flex:1;min-width:0}
+#suggest{position:absolute;top:54px;left:0;right:0;background:var(--card);border:1px solid var(--line);border-radius:12px;z-index:10;display:none;box-shadow:0 6px 20px rgba(0,0,0,.12)}
+#suggest div{padding:12px 14px;cursor:pointer}#suggest div:hover{background:var(--accent-soft)}
+
+/* hero */
+.hero{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:center}
+.face{width:112px;height:112px;border-radius:50%;display:grid;place-items:center;font-size:58px;color:#fff;box-shadow:inset 0 -6px 0 rgba(0,0,0,.08)}
+.place{font-size:14px;color:var(--muted)}
+.verdict{font-size:clamp(24px,5vw,32px);font-weight:800;line-height:1.2;margin:2px 0 6px}
+.advice{font-size:18px;margin:0 0 10px}
+.best{display:inline-block;background:var(--accent-soft);border-radius:12px;padding:8px 12px;font-weight:700}
+.official{font-size:13px;color:var(--muted);margin-top:8px}
+@media (max-width:520px){.hero{grid-template-columns:1fr;text-align:center}.face{margin:0 auto}}
+
+/* week strip */
+.week{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.day{border-radius:14px;padding:10px 6px;text-align:center;border:1px solid var(--line);background:var(--card)}
+.day .dn{font-weight:700;font-size:15px}
+.day .em{font-size:30px;line-height:1.3}
+.day .bt{font-weight:700;font-size:14px}
+.day .bw{font-size:12px;color:var(--muted)}
+@media (max-width:520px){
+  .week{gap:5px}
+  .day{padding:8px 2px;border-radius:12px}
+  .day .dn{font-size:13px}.day .em{font-size:24px}.day .bt{font-size:12px;line-height:1.3}.day .bw{font-size:11px;line-height:1.25}
+}
+
+/* tabs */
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:4px 0 12px}
+.tabs button{border:1.5px solid var(--line);background:var(--card);color:var(--ink);padding:10px 4px;font-weight:700;font-size:15px;display:flex;flex-direction:column;align-items:center;gap:2px}
+.tabs button span{font-size:22px}
+.tabs button[aria-selected="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
+.panel[hidden]{display:none}
+
+/* chat */
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.chip{border:1.5px solid var(--line);background:var(--bubble);color:var(--ink);padding:9px 13px;font-size:15px;text-align:left}
+#chat{display:flex;flex-direction:column;gap:10px;margin-bottom:12px;max-height:460px;overflow-y:auto}
+.msg{padding:12px 15px;border-radius:16px;max-width:90%;white-space:pre-wrap}
+.msg.user{align-self:flex-end;background:var(--accent);color:var(--accent-ink)}
+.msg.bot{align-self:flex-start;background:var(--bubble)}
+.ask{display:flex;gap:8px}
+.ask input{flex:1;min-width:0}
+#mic{width:54px;flex:0 0 auto;font-size:22px;padding:0;border:2px solid var(--accent);background:transparent}
+#mic.listening{background:#d9452f;border-color:#d9452f;animation:pulse 1.2s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(217,69,47,.5)}50%{box-shadow:0 0 0 9px rgba(217,69,47,0)}}
+@media (prefers-reduced-motion: reduce){#mic.listening{animation:none}}
+.hint{min-height:22px;margin-top:6px}
+.speak{background:none;border:none;color:var(--accent);padding:2px 4px;margin-left:6px;font-size:16px}
+
+/* exercise */
+.exhead{display:flex;gap:14px;align-items:center}
+.exicon{font-size:46px}
+.exadvice{font-size:19px;font-weight:700}
+.exup{margin-top:10px;padding:10px 12px;border-radius:12px;background:var(--accent-soft)}
+h3{font-size:17px;margin:18px 0 8px}
+.list{margin:0;padding-left:22px}.list li{margin:6px 0}
+.help{padding:12px 14px;border-left:5px solid var(--accent);background:var(--accent-soft);border-radius:8px;font-size:15px}
+
+/* sky */
+.skyrow{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+#skyprev{max-width:200px;max-height:160px;border-radius:12px;display:none;margin-top:10px}
+#skyout{flex:1 1 260px}
+#skyout .head{font-weight:800;font-size:18px;margin-bottom:4px}
+
+/* me */
+.pgrid{display:grid;gap:10px}
+.pgrid label.chk{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1.5px solid var(--line);border-radius:12px}
+.pgrid label.chk input{width:22px;height:22px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.row2 label{display:flex;flex-direction:column;gap:4px;font-size:15px}
+.saved{color:var(--accent);font-weight:700;min-height:22px}
+
+/* details */
+details.more summary{cursor:pointer;font-weight:700;font-size:17px;list-style:none}
+details.more summary::-webkit-details-marker{display:none}
+details.more summary::before{content:"▸ ";color:var(--accent)}
+details.more[open] summary::before{content:"▾ "}
+.chartbox{position:relative;height:250px;margin-top:10px}
+#status{padding:12px 14px;border-radius:12px;background:var(--accent-soft);margin-bottom:14px}
+#offline{display:none;padding:12px 14px;border-radius:12px;background:#fff3cd;color:#5c4400;margin-bottom:14px}
+#install{display:none}
+footer{color:var(--muted);font-size:13px;margin-top:24px;text-align:center}
 </style>
 </head>
 <body>
 <main>
-  <h1>Clean Air Walk 🌿</h1>
-  <p class="sub">Tell Gemma what you want to do outside. It finds the cleanest time this week from the air-quality forecast.</p>
+  <div class="top">
+    <div class="brand"><img src="/static/icons/icon-192.png" alt=""> Clean Air Walk</div>
+    <button id="install" class="btn ghost small" data-t="install">📲 Install</button>
+    <div class="langsw" role="group" aria-label="Language">
+      <button id="len" aria-pressed="true">English</button>
+      <button id="lhi" aria-pressed="false" lang="hi">हिंदी</button>
+    </div>
+  </div>
 
-  <div class="bar">
-    <input id="q" placeholder="Change place: Ghaziabad, Noida, Lucknow…" autocomplete="off" aria-label="Search a place">
-    <button id="loc" class="ghost" title="Use my location">📍 Near me</button>
-    <button id="install" class="ghost" title="Install as an app">📲 Install app</button>
+  <div class="search">
+    <input id="q" autocomplete="off" data-tp="search" aria-label="Search a place">
+    <button id="loc" class="btn ghost" data-t="nearme">📍 Near me</button>
     <div id="suggest"></div>
   </div>
 
-  <div id="offline">📴 You're offline. Showing the last saved forecast; Gemma and the sky check need internet.</div>
-  <div id="status">Loading the forecast for Ghaziabad…</div>
+  <div id="offline" data-t="offline"></div>
+  <div id="status"></div>
 
   <section id="out" hidden>
-    <div class="card now">
-      <div style="flex:1 1 300px">
-        <div class="muted small" id="place"></div>
-        <div class="big" id="verdict"></div>
-        <div class="muted" id="verdict2"></div>
+    <!-- 1. the big answer -->
+    <div class="card hero" aria-live="polite">
+      <div class="face" id="face">🙂</div>
+      <div>
+        <div class="place" id="place"></div>
+        <div class="verdict" id="verdict"></div>
+        <p class="advice" id="advice"></p>
+        <div class="best" id="best"></div>
+        <div class="official" id="official"></div>
       </div>
-      <div id="nowpill"></div>
     </div>
 
+    <!-- 2. next 5 days -->
     <div class="card">
-      <h2>Ask Gemma 🌱</h2>
-      <details class="profile" id="profilebox">
-        <summary>⚙️ My profile <span class="muted small" id="psum">(optional, saved only on this device)</span></summary>
-        <div class="pgrid">
-          <label><input type="checkbox" name="cond" value="asthma"> I have asthma</label>
-          <label><input type="checkbox" name="cond" value="heart_lung"> Heart or lung condition</label>
-          <label><input type="checkbox" name="cond" value="elderly"> I go out with an elderly person</label>
-          <label><input type="checkbox" name="cond" value="kids"> I go out with small children</label>
-          <label><input type="checkbox" name="cond" value="pregnant"> I'm pregnant</label>
-          <label>Usually free from
-            <select id="pfrom"><option value="">any time</option></select></label>
-          <label>until
-            <select id="puntil"><option value="">any time</option></select></label>
-          <label>Usual activity
-            <select id="pact"><option value="">—</option><option value="walk">Walk</option><option value="run">Run</option>
-              <option value="cycle">Cycling</option><option value="cricket">Cricket</option><option value="yoga">Outdoor yoga</option>
-              <option value="play">Kids' play</option></select></label>
-          <label>for
-            <select id="pdur"><option value="">—</option><option value="20">20 min</option><option value="30">30 min</option>
-              <option value="45">45 min</option><option value="60">1 hour</option><option value="90">1.5 hours</option>
-              <option value="120">2 hours</option><option value="180">3 hours</option></select></label>
-          <label>Language
-            <select id="plang"><option value="">auto</option><option value="en">English</option><option value="hi">हिंदी</option></select></label>
-        </div>
-        <div id="ptags"></div>
-      </details>
+      <div style="font-weight:800;margin-bottom:10px" data-t="week"></div>
+      <div class="week" id="week"></div>
+    </div>
+
+    <!-- 3. tabs -->
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="ask"><span>💬</span><b data-t="tab_ask"></b></button>
+      <button role="tab" aria-selected="false" data-tab="ex"><span>🏃</span><b data-t="tab_ex"></b></button>
+      <button role="tab" aria-selected="false" data-tab="sky"><span>📷</span><b data-t="tab_sky"></b></button>
+      <button role="tab" aria-selected="false" data-tab="me"><span>⚙️</span><b data-t="tab_me"></b></button>
+    </div>
+
+    <div class="card panel" id="p-ask" role="tabpanel">
       <div class="chips" id="chips"></div>
       <div id="chat" aria-live="polite"></div>
       <form class="ask" id="askform">
-        <button type="button" id="lang" class="ghost voice" title="Voice language" hidden>EN</button>
-        <button type="button" id="mic" class="ghost voice" title="Speak your question" aria-label="Speak your question" hidden>🎤</button>
-        <input id="askq" placeholder="e.g. 5 km run after college, I have mild asthma" autocomplete="off" aria-label="Your question">
-        <button id="askbtn">Ask</button>
+        <button type="button" id="mic" aria-label="Speak" hidden>🎤</button>
+        <input id="askq" autocomplete="off" data-tp="askph" aria-label="Your question">
+        <button class="btn" id="askbtn" data-t="ask"></button>
       </form>
-      <div class="voicebar">
-        <span id="voicehint" class="muted small"></span>
-        <label class="muted small" id="autospeakwrap" hidden><input type="checkbox" id="autospeak" checked> 🔊 read answers aloud</label>
-      </div>
-      <p class="muted small" style="margin:8px 0 0">Gemma 4 (open-weight) reads only this page's forecast. Not medical advice.</p>
+      <div class="hint muted small" id="hint"></div>
+      <p class="muted small" style="margin:6px 0 0" data-t="asknote"></p>
     </div>
 
-    <div class="card" id="excard" hidden>
-      <h2>🏃 Exercise &amp; mood today</h2>
-      <div class="exnow">
-        <div id="exband"></div>
-        <div>
-          <div id="exadvice" class="exadvice"></div>
-          <div id="exhealth" class="muted small"></div>
-        </div>
+    <div class="card panel" id="p-ex" role="tabpanel" hidden>
+      <div class="exhead">
+        <div class="exicon" id="exicon">🚶</div>
+        <div><div class="exadvice" id="exadvice"></div><div class="muted small" id="exhealth"></div></div>
       </div>
-      <div id="exup" class="exup"></div>
-      <h3 class="exh">🏠 Indoor alternatives</h3>
-      <ul id="exindoor" class="exlist"></ul>
-      <button type="button" id="indoorbtn" class="ghost">✨ Gemma, make my 20-min indoor plan</button>
-      <div id="indoorout" class="msg bot" hidden></div>
-      <h3 class="exh">🧠 Bad air and your mood</h3>
-      <p class="muted small" style="margin-top:0">Studies link polluted, grey days with lower mood and more anxiety. Small habits help:</p>
-      <ul id="exmood" class="exlist"></ul>
-      <p id="exhelp" class="exhelp"></p>
-      <p class="muted small">Based on India's CPCB health advice for each air-quality band and the US EPA's guidance on outdoor exercise. General guidance, not medical advice.</p>
+      <div class="exup" id="exup" hidden></div>
+      <h3 data-t="indoor"></h3>
+      <ul class="list" id="exindoor"></ul>
+      <button class="btn ghost" id="indoorbtn" data-t="indoorbtn" style="margin-top:6px"></button>
+      <div class="msg bot" id="indoorout" hidden style="margin-top:10px;max-width:100%"></div>
+      <h3 data-t="mood"></h3>
+      <ul class="list" id="exmood"></ul>
+      <p class="help" id="exhelp"></p>
+      <p class="muted small" data-t="exsource"></p>
     </div>
 
-    <div class="card">
-      <h2>📷 Sky check: your eyes vs the forecast</h2>
-      <p class="muted small" style="margin-top:0">Take a photo of the sky or a distant view. Gemma 4 rates the haze it sees and compares it with the forecast for right now.</p>
+    <div class="card panel" id="p-sky" role="tabpanel" hidden>
+      <p style="margin-top:0" data-t="skyintro"></p>
       <div class="skyrow">
         <div>
           <input type="file" id="skyfile" accept="image/*" capture="environment" hidden>
-          <button type="button" id="skybtn">📷 Check the sky</button>
-          <div style="margin-top:10px"><img id="skyprev" alt="your sky photo"></div>
+          <button class="btn" id="skybtn" data-t="skybtn"></button><br>
+          <img id="skyprev" alt="">
         </div>
-        <div id="skyout" class="muted small">Works best in daylight, pointing at the horizon or buildings far away. Fog, cloud and dusk can look like smog.</div>
+        <div id="skyout" class="muted small" data-t="skytip"></div>
       </div>
     </div>
 
-    <div class="card">
-      <h2>Best 2-hour window each day</h2>
-      <div class="days" id="days"></div>
+    <div class="card panel" id="p-me" role="tabpanel" hidden>
+      <p style="margin-top:0" data-t="meintro"></p>
+      <div class="pgrid" id="profilebox">
+        <label class="chk"><input type="checkbox" name="cond" value="asthma"> <span data-t="c_asthma"></span></label>
+        <label class="chk"><input type="checkbox" name="cond" value="heart_lung"> <span data-t="c_heart"></span></label>
+        <label class="chk"><input type="checkbox" name="cond" value="elderly"> <span data-t="c_elderly"></span></label>
+        <label class="chk"><input type="checkbox" name="cond" value="kids"> <span data-t="c_kids"></span></label>
+        <label class="chk"><input type="checkbox" name="cond" value="pregnant"> <span data-t="c_preg"></span></label>
+        <div class="row2">
+          <label><span data-t="freefrom"></span><select id="pfrom"></select></label>
+          <label><span data-t="freeuntil"></span><select id="puntil"></select></label>
+        </div>
+        <div class="row2">
+          <label><span data-t="activity"></span><select id="pact"></select></label>
+          <label><span data-t="howlong"></span><select id="pdur"></select></label>
+        </div>
+      </div>
+      <div class="saved" id="saved"></div>
     </div>
 
+    <!-- 4. more details -->
     <div class="card">
-      <h2>PM2.5 forecast, next 5 days</h2>
-      <div class="chartbox"><canvas id="chart"></canvas></div>
-    </div>
-
-    <div class="card">
-      <details class="safety" id="safety">
-        <summary>🫁 If you feel unwell outside in bad air <span class="muted small">(English / हिंदी)</span></summary>
-        <div id="safety-en">
-          <ul>
-            <li><b>Stop and slow down.</b> Harder breathing pulls in more polluted air. Walk instead of running.</li>
-            <li><b>Move indoors</b> or into a closed car or building, away from busy roads.</li>
-            <li><b>If you have asthma</b>, use your reliever inhaler as your doctor has told you, and follow your asthma action plan.</li>
-            <li><b>Drink water</b> and rest until breathing feels normal.</li>
-            <li><b>Get urgent medical help</b> (call 112) if you have severe breathlessness, chest pain or tightness, blue or grey lips, confusion, or an inhaler that isn't helping.</li>
-            <li><b>Next time</b>: pick a Good or Satisfactory window, go shorter or lighter, and consider a well-fitted N95 mask. Cloth and loose surgical masks do little against PM2.5.</li>
-          </ul>
-        </div>
-        <div id="safety-hi" lang="hi">
-          <ul>
-            <li><b>रुकें और धीमे हो जाएँ।</b> तेज़ साँस लेने से ज़्यादा प्रदूषित हवा अंदर जाती है। दौड़ने की बजाय चलें।</li>
-            <li><b>घर के अंदर</b> या किसी बंद इमारत या गाड़ी में जाएँ, व्यस्त सड़कों से दूर।</li>
-            <li><b>अगर आपको अस्थमा है</b>, तो डॉक्टर के बताए अनुसार अपना रिलीवर इनहेलर लें।</li>
-            <li><b>पानी पिएँ</b> और साँस सामान्य होने तक आराम करें।</li>
-            <li><b>तुरंत डॉक्टरी मदद लें</b> (112 पर कॉल करें) अगर बहुत ज़्यादा साँस फूले, सीने में दर्द या जकड़न हो, होंठ नीले या भूरे पड़ें, घबराहट या उलझन हो, या इनहेलर से आराम न मिले।</li>
-            <li><b>अगली बार</b>: अच्छे या संतोषजनक समय पर जाएँ, कम देर या हल्की गतिविधि करें, और अच्छी तरह फ़िट N95 मास्क पहनें। कपड़े या ढीले सर्जिकल मास्क PM2.5 से बहुत कम बचाते हैं।</li>
-          </ul>
-        </div>
-        <p class="muted small">General guidance, not medical advice. Follow your own doctor's plan.</p>
+      <details class="more">
+        <summary data-t="chart"></summary>
+        <div class="chartbox"><canvas id="chart"></canvas></div>
       </details>
     </div>
-
     <div class="card" id="acccard" hidden>
-      <h2>How accurate is this forecast here?</h2>
-      <p id="accnote"></p>
-      <div class="chartbox" style="height:220px"><canvas id="accchart"></canvas></div>
+      <details class="more">
+        <summary data-t="acc"></summary>
+        <p id="accnote"></p>
+        <div class="chartbox" style="height:210px"><canvas id="accchart"></canvas></div>
+      </details>
+    </div>
+    <div class="card">
+      <details class="more" id="safety">
+        <summary data-t="unwell"></summary>
+        <ul class="list" id="safetylist"></ul>
+        <p class="muted small" data-t="notmed"></p>
+      </details>
     </div>
   </section>
 
   <footer>
-    Assistant: Gemma 4 by Google DeepMind (open weights, Apache 2.0). Forecast: Copernicus CAMS via
-    <a href="https://open-meteo.com">Open-Meteo</a>. Sensors: <a href="https://openaq.org">OpenAQ</a> (CPCB and others).
-    Bands follow India's National AQI PM2.5 breakpoints. Made for the Hacktoberfest 2026 DEV challenge, week 1: Touch Grass.
-    <a href="https://github.com/starkhushi/clean-air-walk">Source code</a>.
+    <span data-t="footer"></span><br>
+    Gemma 4 · Copernicus CAMS via <a href="https://open-meteo.com">Open-Meteo</a> · <a href="https://openaq.org">OpenAQ</a> ·
+    <a href="https://github.com/starkhushi/clean-air-walk">GitHub</a>
   </footer>
 </main>
 
 <script>
 const $ = s => document.querySelector(s);
-let chart, accchart, place = {lat:28.6692, lon:77.4538, name:'Ghaziabad'}, history = [];
-
-const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-const fmtTime = s => new Date(s.replace(' ','T')).toLocaleString([], {weekday:'short', hour:'2-digit', minute:'2-digit'});
-const pill = (b, txt) => `<span class="pill" style="background:${b.color}">${txt || b.label}</span>`;
-const esc = s => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const md = s => esc(s)
   .replace(/^[ \t]*[*-][ \t]+/gm, m => (m.match(/^[ \t]+/) ? '&nbsp;&nbsp;&nbsp;&nbsp;' : '') + '• ')
   .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
-function bandOf(pm, bands){ for(const b of bands){ if(b.max===null || pm<=b.max) return b } return bands[bands.length-1] }
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const store = {get(k, d){ try{ const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); }catch(e){ return d; } },
+               set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }};
 
-const CHIPS = [
-  "5 km run after college, free after 4 pm. I have mild asthma.",
-  "मुझे दादाजी के साथ सुबह पार्क में टहलना है। कौन सा दिन सबसे अच्छा है?",
-  "Cricket with friends this weekend, about 3 hours. Best time?",
-  "Kal shaam cycling jaana safe hai?",
-];
+// ---------------------------------------------------------------- words (English / Hindi)
+const T = {
+  en: {
+    install:'📲 Install', nearme:'📍 Near me', search:'Search a place…',
+    offline:"📴 You're offline. Showing the last saved forecast. Gemma and the sky check need internet.",
+    loading:'Getting the air forecast for {p}… (the first visit after a quiet spell can take up to a minute)',
+    failed:'Sorry, the forecast failed: ', week:'Best time each day', besttoday:'⏰ Best time today: {t}',
+    besttomorrow:'⏰ Best time tomorrow: {t}', official:'Official band: {b} · PM2.5 ≈ {v} µg/m³ · {src}',
+    src_sensor:'real sensor', src_fc:'forecast', near:'nearest sensor: {s}, {d} km',
+    tab_ask:'Ask', tab_ex:'Exercise', tab_sky:'Sky check', tab_me:'Me',
+    ask:'Ask', askph:'Ask anything…', asknote:'Gemma 4 (open-weight AI) answers from this forecast only. Not medical advice.',
+    thinking:'Gemma is thinking…', listen:'Listening…', tapmic:'Tap 🎤 and ask out loud', micblocked:'Microphone is blocked. Allow it in the address bar.',
+    nospeech:"Didn't catch that. Try again.",
+    chips:['5 km run after college, I have mild asthma','Walk with my grandfather tomorrow morning?','Cricket this weekend, 3 hours. Best time?','Is it okay to go out right now?'],
+    indoor:'🏠 Indoor alternatives', indoorbtn:'✨ Gemma, make my 20-min indoor plan', planning:'Gemma is planning your workout…',
+    mood:'🧠 Bad air and your mood', exsource:'Based on India\'s CPCB health advice and the US EPA\'s guidance on outdoor exercise. General guidance, not medical advice.',
+    nextbetter:'Better later: {d}, {t} → {a}',
+    skyintro:'Take a photo of the sky or a far-away view. Gemma 4 checks the haze and compares it with the forecast.',
+    skybtn:'📷 Check the sky', skytip:'Works best in daylight, pointing at the horizon. Fog, cloud and dusk can look like smog.',
+    looking:'Gemma is looking at your sky…', skyfail:'Sky check failed: ',
+    meintro:'Tell us about you once. Answers will fit you automatically. Saved only on this phone.',
+    c_asthma:'I have asthma', c_heart:'Heart or lung problem', c_elderly:'I go out with an elderly person', c_kids:'I go out with small children', c_preg:"I'm pregnant",
+    freefrom:'Usually free from', freeuntil:'until', activity:'Usual activity', howlong:'How long', any:'any time', none:'—',
+    acts:{walk:'Walk', run:'Run', cycle:'Cycling', cricket:'Cricket', yoga:'Outdoor yoga', play:"Kids' play"},
+    saved:'✓ Saved. Answers are now personalised.',
+    chart:'📈 Hour-by-hour forecast', acc:'🎯 How accurate is this forecast here?', unwell:'🫁 Feeling unwell outside? What to do',
+    notmed:'General guidance, not medical advice. Follow your own doctor\'s plan.',
+    accnote:'In the latest {h} hours with readings, the forecast was off by <b>{m} µg/m³</b> on average at {s}. {bias}',
+    acchigh:'It has been running a little high here.', acclow:'It has been running a little low here, so be a bit careful with "okay" slots.', accok:'No consistent bias here.',
+    footer:'Made for Hacktoberfest 2026 · Touch Grass 🌿',
+    safety:['<b>Stop and slow down.</b> Breathing hard pulls in more polluted air. Walk, don\'t run.',
+            '<b>Go indoors</b>, or into a closed car or building away from busy roads.',
+            '<b>If you have asthma</b>, use your reliever inhaler as your doctor told you.',
+            '<b>Drink water</b> and rest until breathing feels normal.',
+            '<b>Call 112</b> for severe breathlessness, chest pain or tightness, blue or grey lips, confusion, or if the inhaler isn\'t helping.',
+            '<b>Next time:</b> pick a 😊 or 🙂 time, go shorter or lighter, and wear a well-fitted N95 mask. Cloth masks do little.'],
+  },
+  hi: {
+    install:'📲 ऐप जोड़ें', nearme:'📍 मेरे पास', search:'जगह खोजें…',
+    offline:'📴 आप ऑफ़लाइन हैं। आख़िरी सेव किया हुआ पूर्वानुमान दिख रहा है। Gemma और स्काई चेक के लिए इंटरनेट चाहिए।',
+    loading:'{p} के लिए हवा का पूर्वानुमान आ रहा है… (थोड़ी देर बाद पहली बार खोलने पर एक मिनट लग सकता है)',
+    failed:'माफ़ कीजिए, पूर्वानुमान नहीं आया: ', week:'हर दिन का सबसे अच्छा समय', besttoday:'⏰ आज सबसे अच्छा समय: {t}',
+    besttomorrow:'⏰ कल सबसे अच्छा समय: {t}', official:'आधिकारिक श्रेणी: {b} · PM2.5 ≈ {v} µg/m³ · {src}',
+    src_sensor:'असली सेंसर', src_fc:'पूर्वानुमान', near:'पास का सेंसर: {s}, {d} किमी',
+    tab_ask:'पूछें', tab_ex:'व्यायाम', tab_sky:'आसमान', tab_me:'मैं',
+    ask:'पूछें', askph:'कुछ भी पूछें…', asknote:'Gemma 4 (ओपन AI) सिर्फ़ इसी पूर्वानुमान से जवाब देता है। यह डॉक्टरी सलाह नहीं है।',
+    thinking:'Gemma सोच रहा है…', listen:'सुन रहे हैं…', tapmic:'🎤 दबाएँ और बोलकर पूछें', micblocked:'माइक बंद है। ऊपर एड्रेस बार में अनुमति दें।',
+    nospeech:'आवाज़ नहीं आई। फिर से कोशिश करें।',
+    chips:['कल सुबह दादाजी के साथ पार्क में टहलना ठीक रहेगा?','कॉलेज के बाद 5 किमी दौड़, मुझे हल्का अस्थमा है','इस वीकेंड 3 घंटे क्रिकेट, कब खेलें?','अभी बाहर जाना ठीक है?'],
+    indoor:'🏠 घर के अंदर के विकल्प', indoorbtn:'✨ Gemma, मेरा 20 मिनट का घरेलू व्यायाम बनाओ', planning:'Gemma आपका व्यायाम बना रहा है…',
+    mood:'🧠 ख़राब हवा और आपका मन', exsource:'भारत के CPCB की स्वास्थ्य सलाह और US EPA के बाहरी व्यायाम दिशानिर्देशों पर आधारित। सामान्य जानकारी, डॉक्टरी सलाह नहीं।',
+    nextbetter:'बाद में बेहतर: {d}, {t} → {a}',
+    skyintro:'आसमान या दूर के दृश्य की फ़ोटो लें। Gemma 4 धुंध देखकर उसे पूर्वानुमान से मिलाता है।',
+    skybtn:'📷 आसमान जाँचें', skytip:'दिन की रोशनी में, क्षितिज की ओर फ़ोटो लें। कोहरा, बादल और शाम की रोशनी भी धुंध जैसी दिख सकती है।',
+    looking:'Gemma आपकी फ़ोटो देख रहा है…', skyfail:'जाँच नहीं हो पाई: ',
+    meintro:'एक बार अपने बारे में बताएँ। जवाब अपने-आप आपके हिसाब से होंगे। सिर्फ़ इसी फ़ोन में सेव होता है।',
+    c_asthma:'मुझे अस्थमा है', c_heart:'दिल या फेफड़ों की बीमारी', c_elderly:'मैं किसी बुज़ुर्ग के साथ जाता/जाती हूँ', c_kids:'मैं छोटे बच्चों के साथ जाता/जाती हूँ', c_preg:'मैं गर्भवती हूँ',
+    freefrom:'आमतौर पर खाली', freeuntil:'तक', activity:'आम गतिविधि', howlong:'कितनी देर', any:'कभी भी', none:'—',
+    acts:{walk:'टहलना', run:'दौड़ना', cycle:'साइकिल', cricket:'क्रिकेट', yoga:'बाहर योग', play:'बच्चों का खेल'},
+    saved:'✓ सेव हो गया। अब जवाब आपके हिसाब से होंगे।',
+    chart:'📈 घंटे-दर-घंटे पूर्वानुमान', acc:'🎯 यहाँ पूर्वानुमान कितना सही है?', unwell:'🫁 बाहर तबीयत ख़राब लगे? क्या करें',
+    notmed:'सामान्य जानकारी, डॉक्टरी सलाह नहीं। अपने डॉक्टर की सलाह मानें।',
+    accnote:'पिछले {h} घंटों में पूर्वानुमान {s} पर औसतन <b>{m} µg/m³</b> अलग रहा। {bias}',
+    acchigh:'यहाँ यह थोड़ा ज़्यादा बताता रहा है।', acclow:'यहाँ यह थोड़ा कम बताता रहा है, इसलिए "ठीक" समय पर भी थोड़ा सावधान रहें।', accok:'कोई ख़ास झुकाव नहीं।',
+    footer:'Hacktoberfest 2026 के लिए बनाया गया · Touch Grass 🌿',
+    safety:['<b>रुकें और धीमे हो जाएँ।</b> तेज़ साँस से ज़्यादा प्रदूषित हवा अंदर जाती है। दौड़ें नहीं, चलें।',
+            '<b>घर के अंदर जाएँ</b>, या किसी बंद इमारत या गाड़ी में, व्यस्त सड़क से दूर।',
+            '<b>अस्थमा है तो</b> डॉक्टर के बताए अनुसार अपना रिलीवर इनहेलर लें।',
+            '<b>पानी पिएँ</b> और साँस सामान्य होने तक आराम करें।',
+            '<b>112 पर कॉल करें</b> अगर बहुत साँस फूले, सीने में दर्द या जकड़न हो, होंठ नीले पड़ें, उलझन हो, या इनहेलर से आराम न मिले।',
+            '<b>अगली बार:</b> 😊 या 🙂 वाला समय चुनें, कम देर या हल्की गतिविधि करें, और अच्छी तरह फ़िट N95 मास्क पहनें। कपड़े का मास्क बहुत कम बचाता है।'],
+  },
+};
+// Plain-language bands (official names stay visible in small text).
+const PLAIN = {
+  Good:{en:'Clean air', hi:'साफ़ हवा', face:'😊'}, Satisfactory:{en:'Okay air', hi:'ठीक-ठाक हवा', face:'🙂'},
+  Moderate:{en:'Not great', hi:'हवा ठीक नहीं', face:'😐'}, Poor:{en:'Bad air', hi:'ख़राब हवा', face:'😷'},
+  'Very poor':{en:'Very bad air', hi:'बहुत ख़राब हवा', face:'😫'}, Severe:{en:'Dangerous air', hi:'ख़तरनाक हवा', face:'🚨'},
+};
+const VERDICT = {en:'{p} right now', hi:'अभी {p}'};
+// Shown instantly; replaced by the personalised advice from /api/exercise when it arrives.
+const QUICK = {
+  en:{Good:'Great time to be outside: run, play, walk.', Satisfactory:'Good for walks, runs and play.',
+      Moderate:'Fine for a walk. Go easy on long, hard workouts.', Poor:'Keep it to a short, easy walk. Exercise indoors.',
+      'Very poor':'Stay indoors if you can.', Severe:'Stay indoors. Avoid going out.'},
+  hi:{Good:'बाहर जाने का बढ़िया समय: दौड़ें, खेलें, टहलें।', Satisfactory:'टहलने, दौड़ने और खेलने के लिए ठीक है।',
+      Moderate:'टहलना ठीक है। लंबा और भारी व्यायाम न करें।', Poor:'सिर्फ़ थोड़ी देर आराम से टहलें। व्यायाम घर में करें।',
+      'Very poor':'हो सके तो घर के अंदर रहें।', Severe:'घर के अंदर रहें। बाहर न जाएँ।'},
+};
+const LEVEL_ICON = ['🏠', '🚶', '🚴', '🏃'];
+
+const urlLang = new URLSearchParams(location.search).get('lang');   // shareable: /?lang=hi
+let LANG = ['en', 'hi'].includes(urlLang) ? urlLang : store.get('caw-lang', (navigator.language || '').startsWith('hi') ? 'hi' : 'en');
+const t = (k, vars = {}) => { let s = (T[LANG][k] ?? T.en[k] ?? k); if(typeof s === 'string') for(const [a, b] of Object.entries(vars)) s = s.replaceAll('{' + a + '}', b); return s; };
+
+const h12 = h => h % 12 || 12;
+const ampm = h => (h % 24) < 12 ? 'am' : 'pm';
+const hiPart = h => { h %= 24; return h < 5 ? 'रात' : h < 12 ? 'सुबह' : h < 16 ? 'दोपहर' : h < 20 ? 'शाम' : 'रात'; };
+function fmtHour(hh){
+  const h = parseInt(hh, 10);
+  return LANG === 'hi' ? `${hiPart(h)} ${h12(h)} बजे` : `${h12(h)} ${ampm(h)}`;
+}
+function fmtRange(s, e){                      // "7–9 pm", "11 am–1 pm", "शाम 7 से 9 बजे", "दोपहर 2 से शाम 4 बजे"
+  s = parseInt(s, 10); e = parseInt(e, 10);
+  if(LANG === 'hi') return hiPart(s) === hiPart(e) ? `${hiPart(s)} ${h12(s)} से ${h12(e)} बजे` : `${hiPart(s)} ${h12(s)} से ${hiPart(e)} ${h12(e)} बजे`;
+  return ampm(s) === ampm(e) ? `${h12(s)}–${h12(e)} ${ampm(e)}` : `${h12(s)} ${ampm(s)}–${h12(e)} ${ampm(e)}`;
+}
+const dayName = iso => new Date(iso + 'T12:00').toLocaleDateString(LANG === 'hi' ? 'hi-IN' : 'en-IN', {weekday:'short'});
+const plain = band => (PLAIN[band] || PLAIN.Moderate)[LANG];
+const face = band => (PLAIN[band] || PLAIN.Moderate).face;
+
+function applyLang(){
+  document.documentElement.lang = LANG === 'hi' ? 'hi' : 'en';
+  $('#len').setAttribute('aria-pressed', LANG === 'en'); $('#lhi').setAttribute('aria-pressed', LANG === 'hi');
+  $$('[data-t]').forEach(el => { const v = t(el.dataset.t); if(typeof v === 'string') el.innerHTML = v; });
+  $$('[data-tp]').forEach(el => el.placeholder = t(el.dataset.tp));
+  $('#chips').innerHTML = t('chips').map(c => `<button class="chip" type="button">${esc(c)}</button>`).join('');
+  $('#safetylist').innerHTML = t('safety').map(s => `<li>${s}</li>`).join('');
+  fillSelects(); setHint();
+  if(lastData){ render(lastData, place.name); loadExercise(); }
+}
+$('#len').onclick = () => { LANG = 'en'; store.set('caw-lang', LANG); applyLang(); };
+$('#lhi').onclick = () => { LANG = 'hi'; store.set('caw-lang', LANG); applyLang(); };
+
+// ---------------------------------------------------------------- tabs
+$$('.tabs button').forEach(b => b.onclick = () => {
+  $$('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  $$('.panel').forEach(p => p.hidden = p.id !== 'p-' + b.dataset.tab);
+});
+
+// ---------------------------------------------------------------- forecast
+let chart, accchart, lastData = null, place = {lat:28.6692, lon:77.4538, name:'Ghaziabad'}, history = [];
 
 async function load(lat, lon, name){
-  place = {lat, lon, name}; history = []; $('#chat').innerHTML = '';
-  $('#status').hidden = false;
-  $('#status').textContent = `Fetching the forecast and nearest sensor for ${name}… (the first load after a quiet spell can take up to a minute)`;
+  place = {lat, lon, name}; history = []; $('#chat').innerHTML = ''; $('#indoorout').hidden = true;
+  delete $('#advice').dataset.personal;
+  $('#status').hidden = false; $('#status').textContent = t('loading', {p:name});
   try{
     const r = await fetch(`/api/forecast?lat=${lat}&lon=${lon}`);
     if(!r.ok) throw new Error((await r.json()).detail || r.statusText);
-    render(await r.json(), name);
-    $('#status').hidden = true;
-    $('#indoorout').hidden = true;
-    loadExercise();
-  }catch(e){ $('#status').textContent = 'Sorry, the forecast failed: ' + e.message; }
+    lastData = await r.json(); render(lastData, name); $('#status').hidden = true; loadExercise();
+  }catch(e){ $('#status').textContent = t('failed') + e.message; }
 }
 
-let lastBands = [];
+function bandOf(pm, bands){ for(const b of bands){ if(b.max === null || pm <= b.max) return b; } return bands[bands.length - 1]; }
+
 function render(d, name){
   $('#out').hidden = false;
-  lastBands = d.bands;
   const f = d.forecast, bands = d.bands;
+  const nr = d.now_reading && d.now_reading.age_hours <= 3 ? d.now_reading : null;
+  const pm = nr ? nr.pm25 : f.pm25[0];
+  const b = bandOf(pm, bands);
+  $('#face').textContent = face(b.label); $('#face').style.background = b.color;
+  $('#verdict').textContent = VERDICT[LANG].replace('{p}', plain(b.label));
+  if(!$('#advice').dataset.personal) $('#advice').textContent = QUICK[LANG][b.label] || '';
   let where = name;
-  if(d.sensor) where += ` · nearest sensor: ${d.sensor.name}, ${(d.sensor.distance_m/1000).toFixed(1)} km away`;
+  if(d.sensor) where += ' · ' + t('near', {s:d.sensor.name.split(' - ')[0], d:(d.sensor.distance_m / 1000).toFixed(1)});
   $('#place').textContent = where;
-
-  const today = d.windows[0];
-  if(today){
-    const isToday = today.date === d.generated_local.slice(0,10);
-    $('#verdict').textContent = `Best time ${isToday ? 'today' : 'on ' + today.weekday}: ${today.best.start}–${today.best.end}`;
-    $('#verdict2').textContent = `Expected PM2.5 ≈ ${today.best.pm25} µg/m³ (${today.best.label}). Avoid ${today.worst.start}–${today.worst.end}, ≈ ${today.worst.pm25} (${today.worst.label}).`;
+  $('#official').textContent = t('official', {b:b.label, v:Math.round(pm), src:nr ? t('src_sensor') : t('src_fc')});
+  const w0 = d.windows[0];
+  if(w0){
+    const isToday = w0.date === d.generated_local.slice(0, 10);
+    $('#best').textContent = t(isToday ? 'besttoday' : 'besttomorrow', {t:`${fmtRange(w0.best.start.slice(0,2), w0.best.end.slice(0,2))} ${face(w0.best.label)}`});
   }
-  const nr = d.now_reading;
-  if(nr){
-    const ago = nr.age_hours < 2 ? 'measured just now' : nr.age_hours < 48 ? `measured ${Math.round(nr.age_hours)} h ago` : `last reading ${new Date(nr.time.replace(' ','T')).toLocaleDateString([], {day:'numeric', month:'short'})}`;
-    $('#nowpill').innerHTML = `<div class="muted small">real sensor, ${ago}</div>${pill(nr, Math.round(nr.pm25) + ' µg/m³ · ' + nr.label)}`;
-  } else {
-    $('#nowpill').innerHTML = f.pm25.length ? `<div class="muted small">forecast now</div>${pill(bandOf(f.pm25[0], bands), Math.round(f.pm25[0]) + ' µg/m³ · ' + bandOf(f.pm25[0], bands).label)}` : '';
-  }
-
-  $('#chips').innerHTML = CHIPS.map(c => `<button class="chip" type="button">${esc(c)}</button>`).join('');
-  $('#chips').onclick = e => { const b = e.target.closest('.chip'); if(b) ask(b.textContent); };
-
-  $('#days').innerHTML = d.windows.map(w => `
-    <div class="day">
-      <h3>${w.weekday}</h3>
-      <div class="t">${w.best.start}–${w.best.end}</div>
-      <div>${pill(w.best)} <span class="small muted">≈${w.best.pm25} µg/m³, ${w.best.temp}°C</span></div>
-      <div class="small muted" style="margin-top:6px">worst: ${w.worst.start}–${w.worst.end} (≈${w.worst.pm25})</div>
+  $('#week').innerHTML = d.windows.map(w => `
+    <div class="day" style="border-top:5px solid ${w.best.color}">
+      <div class="dn">${esc(dayName(w.date))}</div>
+      <div class="em">${face(w.best.label)}</div>
+      <div class="bt">${esc(fmtRange(w.best.start.slice(0,2), w.best.end.slice(0,2)))}</div>
+      <div class="bw">${esc(plain(w.best.label))}</div>
     </div>`).join('');
 
   const ink = css('--ink'), muted = css('--muted'), line = css('--line'), acc = css('--accent');
+  const labels = f.time.map(s => { const x = new Date(s.replace(' ', 'T')); return `${dayName(s.slice(0,10))} ${fmtHour(x.getHours())}`; });
   chart && chart.destroy();
-  chart = new Chart($('#chart'), {type:'line', data:{labels:f.time.map(fmtTime), datasets:[
-    {label:'PM2.5 forecast (µg/m³)', data:f.pm25, borderColor:acc, borderWidth:2.5, pointRadius:0, tension:.3,
-     segment:{borderColor:c => bandOf((c.p0.parsed.y + c.p1.parsed.y)/2, bands).color}},
-  ]}, options:{maintainAspectRatio:false, interaction:{mode:'index', intersect:false},
-    plugins:{legend:{display:false}, tooltip:{callbacks:{label:c => `${c.parsed.y} µg/m³ · ${bandOf(c.parsed.y, bands).label}`}}},
-    scales:{x:{ticks:{color:muted, maxTicksLimit:10}, grid:{color:line}},
-            y:{title:{display:true, text:'PM2.5 µg/m³', color:muted}, ticks:{color:muted}, grid:{color:line}, beginAtZero:true}}}});
+  chart = new Chart($('#chart'), {type:'line', data:{labels, datasets:[{data:f.pm25, borderWidth:3, pointRadius:0, tension:.3,
+      segment:{borderColor:c => bandOf((c.p0.parsed.y + c.p1.parsed.y) / 2, bands).color}}]},
+    options:{maintainAspectRatio:false, interaction:{mode:'index', intersect:false},
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label:c => `${Math.round(c.parsed.y)} µg/m³ · ${plain(bandOf(c.parsed.y, bands).label)}`}}},
+      scales:{x:{ticks:{color:muted, maxTicksLimit:8}, grid:{color:line}}, y:{ticks:{color:muted}, grid:{color:line}, beginAtZero:true}}}});
 
   const a = d.accuracy;
   $('#acccard').hidden = !a;
   if(a){
-    $('#accnote').innerHTML = `In the latest ${a.hours} hours with sensor readings, the forecast was off by <b>${a.mae} µg/m³</b> on average at ${esc(d.sensor.name)} (real average ${a.mean_sensor}). `
-      + (a.bias > 5 ? 'It has been running a little high here.' : a.bias < -5 ? 'It has been running a little low here, so treat good slots with some caution.' : 'It has had no consistent bias here.');
+    $('#accnote').innerHTML = t('accnote', {h:a.hours, m:a.mae, s:esc(d.sensor.name.split(' - ')[0]),
+      bias:a.bias > 5 ? t('acchigh') : a.bias < -5 ? t('acclow') : t('accok')});
     accchart && accchart.destroy();
-    accchart = new Chart($('#accchart'), {type:'line', data:{labels:a.series.time.map(fmtTime), datasets:[
-      {label:'Real sensor', data:a.series.sensor, borderColor:ink, borderWidth:2, pointRadius:0},
-      {label:'Forecast', data:a.series.cams, borderColor:acc, borderDash:[5,4], borderWidth:2, pointRadius:0},
-    ]}, options:{maintainAspectRatio:false, interaction:{mode:'index', intersect:false},
-      plugins:{legend:{labels:{color:ink}}},
-      scales:{x:{ticks:{color:muted, maxTicksLimit:8}, grid:{color:line}}, y:{ticks:{color:muted}, grid:{color:line}, beginAtZero:true}}}});
+    accchart = new Chart($('#accchart'), {type:'line', data:{labels:a.series.time.map(s => dayName(s.slice(0,10)) + ' ' + fmtHour(s.slice(11,13))), datasets:[
+      {label:LANG === 'hi' ? 'असली सेंसर' : 'Real sensor', data:a.series.sensor, borderColor:ink, borderWidth:2, pointRadius:0},
+      {label:LANG === 'hi' ? 'पूर्वानुमान' : 'Forecast', data:a.series.cams, borderColor:acc, borderDash:[5,4], borderWidth:2, pointRadius:0}]},
+      options:{maintainAspectRatio:false, interaction:{mode:'index', intersect:false}, plugins:{legend:{labels:{color:ink}}},
+        scales:{x:{ticks:{color:muted, maxTicksLimit:6}, grid:{color:line}}, y:{ticks:{color:muted}, grid:{color:line}, beginAtZero:true}}}});
   }
 }
 
+// ---------------------------------------------------------------- ask Gemma
 function bubble(role, html){
   const el = document.createElement('div'); el.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
   el.innerHTML = html; $('#chat').appendChild(el); $('#chat').scrollTop = $('#chat').scrollHeight; return el;
 }
-
+async function streamInto(el, res){
+  const reader = res.body.getReader(), dec = new TextDecoder(); let text = '';
+  for(;;){ const {value, done} = await reader.read(); if(done) break; text += dec.decode(value, {stream:true}); el.innerHTML = md(text); }
+  return text;
+}
+function addSpeak(el, text){
+  if(!TTS) return;
+  const b = document.createElement('button'); b.className = 'speak'; b.type = 'button'; b.textContent = '🔊';
+  b.setAttribute('aria-label', 'Read aloud'); b.onclick = () => speak(text); el.appendChild(b);
+}
 async function ask(q, viaVoice = false){
   q = q.trim(); if(!q) return;
-  stopSpeaking();
-  $('#askq').value = ''; $('#askbtn').disabled = true;
+  stopSpeaking(); $('#askq').value = ''; $('#askbtn').disabled = true;
   bubble('user', esc(q));
-  const out = bubble('bot', '<span class="muted">Gemma is thinking…</span>');
-  let text = '';
+  const out = bubble('bot', `<span class="muted">${t('thinking')}</span>`);
   try{
     const r = await fetch('/api/ask', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({question:q, lat:place.lat, lon:place.lon, place:place.name, history, profile:getProfile()})});
+      body:JSON.stringify({question:q, lat:place.lat, lon:place.lon, place:place.name, history, profile:getProfile()})});
     if(!r.ok) throw new Error(r.statusText);
-    const reader = r.body.getReader(), dec = new TextDecoder();
-    for(;;){
-      const {value, done} = await reader.read(); if(done) break;
-      text += dec.decode(value, {stream:true}); out.innerHTML = md(text);
-      $('#chat').scrollTop = $('#chat').scrollHeight;
-    }
+    const text = await streamInto(out, r);
     history.push({role:'user', content:q}, {role:'assistant', content:text});
-    if(TTS){
-      const btn = document.createElement('button');
-      btn.className = 'speak'; btn.type = 'button'; btn.title = 'Read aloud'; btn.setAttribute('aria-label', 'Read this answer aloud');
-      btn.textContent = '🔊'; btn.onclick = () => speak(text);
-      out.appendChild(btn);
-      if(viaVoice || $('#autospeak').checked && voiceUsed) speak(text);
-    }
-  }catch(e){ out.textContent = 'Sorry, the assistant failed: ' + e.message; }
-  $('#askbtn').disabled = false;
+    addSpeak(out, text); if(viaVoice) speak(text);
+  }catch(e){ out.textContent = 'Sorry: ' + e.message; }
+  $('#askbtn').disabled = false; $('#chat').scrollTop = $('#chat').scrollHeight;
 }
 $('#askform').onsubmit = e => { e.preventDefault(); ask($('#askq').value); };
+$('#chips').onclick = e => { const b = e.target.closest('.chip'); if(b) ask(b.textContent); };
 
-// ---------------------------------------------------------------- voice
-// Speech in and out with the browser's built-in Web Speech API: no extra service, works in
-// Chrome, Edge and Android Chrome (Hindi included). Hidden where unsupported.
+// ---------------------------------------------------------------- voice (browser Web Speech API)
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const TTS = 'speechSynthesis' in window;
-let voiceLang = (navigator.language || '').startsWith('hi') ? 'hi-IN' : 'en-IN';
-let recog = null, listening = false, voiceUsed = false;
-
-function setLang(l){
-  voiceLang = l;
-  $('#lang').textContent = l === 'hi-IN' ? 'हिं' : 'EN';
-  $('#voicehint').textContent = SR ? (l === 'hi-IN' ? 'माइक दबाएँ और हिंदी में पूछें' : 'Tap 🎤 and ask out loud') : '';
-}
+let recog = null, listening = false;
+function setHint(msg){ $('#hint').textContent = msg ?? (SR ? t('tapmic') : ''); }
 if(SR){
-  $('#mic').hidden = false; $('#lang').hidden = false;
-  $('#lang').onclick = () => setLang(voiceLang === 'hi-IN' ? 'en-IN' : 'hi-IN');
+  $('#mic').hidden = false;
   $('#mic').onclick = () => {
     if(listening){ recog && recog.stop(); return; }
     stopSpeaking();
-    recog = new SR();
-    recog.lang = voiceLang; recog.interimResults = true; recog.maxAlternatives = 1; recog.continuous = false;
+    recog = new SR(); recog.lang = LANG === 'hi' ? 'hi-IN' : 'en-IN'; recog.interimResults = true; recog.continuous = false;
     let finalText = '';
-    recog.onstart = () => { listening = true; $('#mic').classList.add('listening'); $('#voicehint').textContent = voiceLang === 'hi-IN' ? 'सुन रहे हैं…' : 'Listening…'; };
-    recog.onresult = ev => {
-      let interim = '';
-      for(let i = ev.resultIndex; i < ev.results.length; i++){
-        const t = ev.results[i][0].transcript;
-        if(ev.results[i].isFinal) finalText += t; else interim += t;
-      }
-      $('#askq').value = (finalText + interim).trim();
-    };
-    recog.onerror = ev => {
-      $('#voicehint').textContent = ev.error === 'not-allowed' ? 'Microphone permission was blocked. Allow it in the address bar.'
-        : ev.error === 'no-speech' ? "Didn't catch that. Try again." : 'Voice input error: ' + ev.error;
-    };
-    recog.onend = () => {
-      listening = false; $('#mic').classList.remove('listening'); setLang(voiceLang);
-      const q = ($('#askq').value || '').trim();
-      if(finalText.trim() && q){ voiceUsed = true; ask(q, true); }
-    };
-    try{ recog.start(); }catch(e){ $('#voicehint').textContent = 'Voice input unavailable: ' + e.message; }
+    recog.onstart = () => { listening = true; $('#mic').classList.add('listening'); setHint(t('listen')); };
+    recog.onresult = ev => { let interim = '';
+      for(let i = ev.resultIndex; i < ev.results.length; i++){ const s = ev.results[i][0].transcript; if(ev.results[i].isFinal) finalText += s; else interim += s; }
+      $('#askq').value = (finalText + interim).trim(); };
+    recog.onerror = ev => setHint(ev.error === 'not-allowed' ? t('micblocked') : ev.error === 'no-speech' ? t('nospeech') : 'Voice error: ' + ev.error);
+    recog.onend = () => { listening = false; $('#mic').classList.remove('listening');
+      const q = ($('#askq').value || '').trim(); if(finalText.trim() && q){ setHint(); ask(q, true); } };
+    try{ recog.start(); }catch(e){ setHint('Voice unavailable: ' + e.message); }
   };
 }
-if(TTS) $('#autospeakwrap').hidden = !SR;
-setLang(voiceLang);
-
-function plain(s){ return s.replace(/\*\*(.+?)\*\*/g, '$1').replace(/[*_`#>]/g, '').replace(/\(Gemma is busy[^)]*\)/, '').trim(); }
-function pickVoice(lang){
-  const vs = speechSynthesis.getVoices();
-  return vs.find(v => v.lang === lang) || vs.find(v => v.lang.startsWith(lang.slice(0, 2))) || null;
-}
+function plainText(s){ return s.replace(/\*\*(.+?)\*\*/g, '$1').replace(/[*_`#>•]/g, '').replace(/\(Gemma[^)]*\)/, '').trim(); }
 function stopSpeaking(){ if(TTS) speechSynthesis.cancel(); }
 function speak(text){
-  if(!TTS) return;
-  stopSpeaking();
-  const t = plain(text);
-  const lang = /[ऀ-ॿ]/.test(t) ? 'hi-IN' : 'en-IN';
-  const voice = pickVoice(lang);
-  // Chrome cuts off long utterances, so speak sentence by sentence.
-  const parts = t.match(/[^.!?।]+[.!?।]*/g) || [t];
-  for(const p of parts){
-    const u = new SpeechSynthesisUtterance(p.trim());
-    u.lang = lang; if(voice) u.voice = voice; u.rate = 1.0;
-    speechSynthesis.speak(u);
-  }
+  if(!TTS) return; stopSpeaking();
+  const s = plainText(text), lang = /[ऀ-ॿ]/.test(s) ? 'hi-IN' : 'en-IN';
+  const vs = speechSynthesis.getVoices(), voice = vs.find(v => v.lang === lang) || vs.find(v => v.lang.startsWith(lang.slice(0, 2)));
+  for(const p of (s.match(/[^.!?।\n]+[.!?।]*/g) || [s])){ if(!p.trim()) continue;
+    const u = new SpeechSynthesisUtterance(p.trim()); u.lang = lang; if(voice) u.voice = voice; speechSynthesis.speak(u); }
 }
-if(TTS && speechSynthesis.onvoiceschanged !== undefined) speechSynthesis.onvoiceschanged = () => {};
+if(TTS) speechSynthesis.onvoiceschanged = () => {};
 
-// ---------------------------------------------------------------- my profile (this device only)
+// ---------------------------------------------------------------- me (profile, this device only)
 const PKEY = 'caw-profile-v1';
-const COND_LABEL = {asthma:'asthma', heart_lung:'heart/lung', elderly:'with elderly', kids:'with kids', pregnant:'pregnant'};
-const ACT_LABEL = {walk:'walk', run:'run', cycle:'cycling', cricket:'cricket', yoga:'yoga', play:"kids' play"};
-for(let h = 5; h <= 22; h++){
-  const t = `${String(h).padStart(2,'0')}:00`;
-  $('#pfrom').insertAdjacentHTML('beforeend', `<option value="${h}">${t}</option>`);
-  $('#puntil').insertAdjacentHTML('beforeend', `<option value="${h}">${t}</option>`);
+function fillSelects(){
+  const keep = {f:$('#pfrom').value, u:$('#puntil').value, a:$('#pact').value, d:$('#pdur').value};
+  const hours = [`<option value="">${t('any')}</option>`].concat([...Array(18)].map((_, i) => `<option value="${i + 5}">${fmtHour(i + 5)}</option>`)).join('');
+  $('#pfrom').innerHTML = hours; $('#puntil').innerHTML = hours;
+  $('#pact').innerHTML = `<option value="">${t('none')}</option>` + Object.entries(t('acts')).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+  $('#pdur').innerHTML = `<option value="">${t('none')}</option>` + [20, 30, 45, 60, 90, 120, 180].map(m => `<option value="${m}">${m < 60 ? m + (LANG === 'hi' ? ' मिनट' : ' min') : (m / 60) + (LANG === 'hi' ? ' घंटे' : ' h')}</option>`).join('');
+  const p = store.get(PKEY, {});
+  $('#pfrom').value = keep.f || (p.free_from ?? ''); $('#puntil').value = keep.u || (p.free_until ?? '');
+  $('#pact').value = keep.a || (p.activity || ''); $('#pdur').value = keep.d || (p.duration_min || '');
 }
-function readStore(){ try{ return JSON.parse(localStorage.getItem(PKEY) || '{}'); }catch(e){ return {}; } }
-function writeStore(p){ try{ localStorage.setItem(PKEY, JSON.stringify(p)); }catch(e){} }
 function getProfile(){
   const num = v => v === '' ? null : +v;
-  return {
-    conditions: [...document.querySelectorAll('input[name=cond]:checked')].map(i => i.value),
-    free_from: num($('#pfrom').value), free_until: num($('#puntil').value),
-    activity: $('#pact').value || null, duration_min: num($('#pdur').value), language: $('#plang').value || null,
-  };
-}
-function showProfile(){
-  const p = getProfile(), tags = [];
-  p.conditions.forEach(c => tags.push(COND_LABEL[c]));
-  if(p.free_from !== null || p.free_until !== null) tags.push(`free ${p.free_from ?? '…'}–${p.free_until ?? '…'}h`);
-  if(p.activity) tags.push(ACT_LABEL[p.activity] + (p.duration_min ? ` ${p.duration_min} min` : ''));
-  if(p.language) tags.push(p.language === 'hi' ? 'हिंदी' : 'English');
-  $('#ptags').innerHTML = tags.map(t => `<span class="ptag">${esc(t)}</span>`).join('');
-  $('#psum').textContent = tags.length ? `· answers personalised: ${tags.join(', ')}` : '(optional, saved only on this device)';
-  // Safety tips: show the chosen language, or both on auto.
-  $('#safety-en').hidden = p.language === 'hi'; $('#safety-hi').hidden = p.language === 'en';
+  return {conditions:$$('input[name=cond]:checked').map(i => i.value), free_from:num($('#pfrom').value), free_until:num($('#puntil').value),
+          activity:$('#pact').value || null, duration_min:num($('#pdur').value), language:LANG};
 }
 (function initProfile(){
-  const p = readStore();
+  const p = store.get(PKEY, {});
   (p.conditions || []).forEach(c => { const el = document.querySelector(`input[name=cond][value="${c}"]`); if(el) el.checked = true; });
-  if(p.free_from != null) $('#pfrom').value = p.free_from;
-  if(p.free_until != null) $('#puntil').value = p.free_until;
-  if(p.activity) $('#pact').value = p.activity;
-  if(p.duration_min) $('#pdur').value = p.duration_min;
-  if(p.language) $('#plang').value = p.language;
-  if(p.language && SR) setLang(p.language === 'hi' ? 'hi-IN' : 'en-IN');
-  showProfile();
   $('#profilebox').addEventListener('change', () => {
-    const np = getProfile(); writeStore(np); showProfile();
-    if(np.language && SR) setLang(np.language === 'hi' ? 'hi-IN' : 'en-IN');
+    store.set(PKEY, getProfile()); $('#saved').textContent = t('saved');
+    clearTimeout(window._sv); window._sv = setTimeout(() => $('#saved').textContent = '', 3000);
+    if(lastData) loadExercise();
   });
 })();
+
+// ---------------------------------------------------------------- exercise & mood
+async function loadExercise(){
+  try{
+    const r = await fetch('/api/exercise', {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({lat:place.lat, lon:place.lon, lang:LANG, profile:getProfile()})});
+    if(!r.ok) return; const x = await r.json(); if(!x.ok) return;
+    $('#exicon').textContent = LEVEL_ICON[x.level];
+    $('#exadvice').textContent = x.advice;
+    $('#exhealth').textContent = `${face(x.band)} ${plain(x.band)}: ${x.health}`;
+    $('#advice').textContent = x.advice;            // the big answer at the top uses the personalised advice
+    $('#advice').dataset.personal = '1';
+    const up = x.upcoming.find(u => u.level > x.level);
+    $('#exup').hidden = !up;
+    if(up) $('#exup').textContent = t('nextbetter', {d:dayName(lastData.windows.find(w => w.weekday === up.day)?.date || ''), t:fmtRange(up.start.slice(0,2), up.end.slice(0,2)), a:up.advice});
+    $('#exindoor').innerHTML = x.indoor.map(i => `<li>${i.icon} ${esc(i.text)}</li>`).join('');
+    $('#exmood').innerHTML = x.mood.map(m => `<li>${esc(m)}</li>`).join('');
+    $('#exhelp').textContent = '📞 ' + x.helpline;
+  }catch(e){ /* the page works without this */ }
+}
+$('#indoorbtn').onclick = async () => {
+  const out = $('#indoorout'); out.hidden = false; out.innerHTML = `<span class="muted">${t('planning')}</span>`; $('#indoorbtn').disabled = true;
+  try{
+    const r = await fetch('/api/indoor-plan', {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({lat:place.lat, lon:place.lon, lang:LANG, profile:getProfile()})});
+    if(!r.ok) throw new Error(r.statusText);
+    addSpeak(out, await streamInto(out, r));
+  }catch(e){ out.textContent = 'Sorry: ' + e.message; }
+  $('#indoorbtn').disabled = false;
+};
 
 // ---------------------------------------------------------------- sky check (Gemma 4 vision)
 function resizeImage(file, maxSide = 1024){
   return new Promise((resolve, reject) => {
     const img = new Image(), url = URL.createObjectURL(file);
-    img.onload = () => {
-      const s = Math.min(1, maxSide / Math.max(img.width, img.height));
+    img.onload = () => { const s = Math.min(1, maxSide / Math.max(img.width, img.height));
       const c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
-      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
-      resolve(c.toDataURL('image/jpeg', 0.85));
-    };
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); resolve(c.toDataURL('image/jpeg', .85)); };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read that image.')); };
     img.src = url;
   });
 }
 $('#skybtn').onclick = () => $('#skyfile').click();
 $('#skyfile').onchange = async e => {
-  const f = e.target.files[0]; if(!f) return;
+  const file = e.target.files[0]; if(!file) return;
   const out = $('#skyout'); $('#skybtn').disabled = true;
   try{
-    const dataUrl = await resizeImage(f);
+    const dataUrl = await resizeImage(file);
     $('#skyprev').src = dataUrl; $('#skyprev').style.display = 'block';
-    out.className = ''; out.innerHTML = '<span class="muted">Gemma is looking at your sky…</span>';
-    const lang = $('#plang').value === 'hi' || voiceLang === 'hi-IN' ? 'hi' : 'en';
+    out.className = ''; out.innerHTML = `<span class="muted">${t('looking')}</span>`;
     const r = await fetch('/api/sky', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({image:dataUrl, lat:place.lat, lon:place.lon, lang})});
-    const j = await r.json();
-    if(!r.ok) throw new Error(j.detail || r.statusText);
+      body:JSON.stringify({image:dataUrl, lat:place.lat, lon:place.lon, lang:LANG})});
+    const j = await r.json(); if(!r.ok) throw new Error(j.detail || r.statusText);
     out.innerHTML = j.ok ? `<div class="head">${esc(j.headline)}</div><div>${esc(j.message)}</div>` : esc(j.message);
-    if(j.ok && TTS && voiceUsed) speak(j.headline + ' ' + j.message);
-  }catch(err){ out.textContent = 'Sky check failed: ' + err.message; }
+    if(j.ok) addSpeak(out, j.headline + ' ' + j.message);
+  }catch(err){ out.textContent = t('skyfail') + err.message; }
   $('#skybtn').disabled = false; e.target.value = '';
 };
 
-// ---------------------------------------------------------------- exercise & mood
-function uiLang(){ return $('#plang').value === 'hi' || ($('#plang').value === '' && voiceLang === 'hi-IN') ? 'hi' : 'en'; }
-const LEVEL_ICON = ['🏠', '🚶', '🚴', '🏃'];
-async function loadExercise(){
-  try{
-    const r = await fetch('/api/exercise', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({lat:place.lat, lon:place.lon, lang:uiLang(), profile:getProfile()})});
-    if(!r.ok) return;
-    const x = await r.json(); if(!x.ok) return;
-    const col = (lastBands.find(b => b.label === x.band) || {}).color || '#888';
-    $('#exband').innerHTML = `<div style="font-size:40px;line-height:1">${LEVEL_ICON[x.level]}</div>`;
-    $('#exadvice').textContent = x.advice;
-    $('#exhealth').innerHTML = `${pill({color:col, label:x.band}, Math.round(x.pm25) + ' µg/m³ · ' + x.band)} ${esc(x.health)}`
-      + (x.sensitive ? ' <span class="ptag">personalised</span>' : '');
-    $('#exup').innerHTML = x.upcoming.filter(u => u.level > x.level).slice(0, 1).map(u =>
-      `<div>${LEVEL_ICON[u.level]} <b>${esc(u.day)}, ${u.start}–${u.end}</b> (≈${Math.round(u.pm25)}, ${esc(u.band)}): ${esc(u.advice)}</div>`).join('');
-    $('#exindoor').innerHTML = x.indoor.map(i => `<li>${i.icon} ${esc(i.text)}</li>`).join('');
-    $('#exmood').innerHTML = x.mood.map(m => `<li>${esc(m)}</li>`).join('');
-    $('#exhelp').textContent = '📞 ' + x.helpline;
-    $('#excard').hidden = false;
-  }catch(e){ /* the rest of the page works without this card */ }
-}
-$('#indoorbtn').onclick = async () => {
-  const out = $('#indoorout'); out.hidden = false; out.innerHTML = '<span class="muted">Gemma is planning your workout…</span>';
-  $('#indoorbtn').disabled = true; let text = '';
-  try{
-    const r = await fetch('/api/indoor-plan', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({lat:place.lat, lon:place.lon, lang:uiLang(), profile:getProfile()})});
-    if(!r.ok) throw new Error(r.statusText);
-    const reader = r.body.getReader(), dec = new TextDecoder();
-    for(;;){ const {value, done} = await reader.read(); if(done) break; text += dec.decode(value, {stream:true}); out.innerHTML = md(text); }
-    if(TTS){ const b = document.createElement('button'); b.className = 'speak'; b.type = 'button'; b.textContent = '🔊';
-      b.title = 'Read aloud'; b.onclick = () => speak(text); out.appendChild(b); }
-  }catch(e){ out.textContent = 'Could not make a plan right now: ' + e.message; }
-  $('#indoorbtn').disabled = false;
-};
-$('#profilebox').addEventListener('change', () => { if(!$('#out').hidden) loadExercise(); });
-
-// ---------------------------------------------------------------- installable app + offline
-if('serviceWorker' in navigator){
-  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
-}
-let installEvt = null;
-window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; $('#install').style.display = 'inline-block'; });
-$('#install').onclick = async () => { if(!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; $('#install').style.display = 'none'; };
-window.addEventListener('appinstalled', () => { $('#install').style.display = 'none'; });
-function netStatus(){ $('#offline').style.display = navigator.onLine ? 'none' : 'block'; }
-window.addEventListener('online', netStatus); window.addEventListener('offline', netStatus); netStatus();
-
+// ---------------------------------------------------------------- place search
 let tmr;
 $('#q').addEventListener('input', e => {
   clearTimeout(tmr); const q = e.target.value.trim();
-  if(q.length < 2){ $('#suggest').style.display = 'none'; return }
+  if(q.length < 2){ $('#suggest').style.display = 'none'; return; }
   tmr = setTimeout(async () => {
     const r = await fetch('/api/geocode?q=' + encodeURIComponent(q)); const list = r.ok ? await r.json() : [];
     $('#suggest').innerHTML = list.map((p, i) => `<div data-i="${i}">${esc(p.name)}<span class="muted small">, ${esc([p.admin, p.country].filter(Boolean).join(', '))}</span></div>`).join('');
@@ -581,9 +641,21 @@ $('#q').addEventListener('input', e => {
   }, 300);
 });
 $('#loc').onclick = () => navigator.geolocation.getCurrentPosition(
-  p => load(+p.coords.latitude.toFixed(4), +p.coords.longitude.toFixed(4), 'your location'),
-  () => { $('#status').hidden = false; $('#status').textContent = 'Location permission denied. Search for a place instead.'; });
+  p => load(+p.coords.latitude.toFixed(4), +p.coords.longitude.toFixed(4), LANG === 'hi' ? 'आपकी जगह' : 'your location'),
+  () => { $('#status').hidden = false; $('#status').textContent = LANG === 'hi' ? 'लोकेशन की अनुमति नहीं मिली। जगह खोजें।' : 'Location permission denied. Search for a place instead.'; });
 
+// ---------------------------------------------------------------- installable app + offline
+if('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+let installEvt = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; $('#install').style.display = 'inline-block'; });
+$('#install').onclick = async () => { if(!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; $('#install').style.display = 'none'; };
+window.addEventListener('appinstalled', () => { $('#install').style.display = 'none'; });
+function netStatus(){ $('#offline').style.display = navigator.onLine ? 'none' : 'block'; }
+window.addEventListener('online', netStatus); window.addEventListener('offline', netStatus); netStatus();
+
+applyLang();
+const urlTab = new URLSearchParams(location.search).get('tab');      // shareable: /?tab=ex
+if(urlTab){ const b = document.querySelector(`.tabs button[data-tab="${CSS.escape(urlTab)}"]`); if(b) b.click(); }
 load(place.lat, place.lon, place.name);
 </script>
 </body>
