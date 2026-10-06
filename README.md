@@ -21,6 +21,11 @@ short health note.
   forecast for this hour, flagging fog, cloud or dusk that can look like smog.
 - 📲 **Installable and offline**: add it to your home screen. The last forecast still shows offline.
 - 🫁 **If you feel unwell outside**: plain safety steps in English and Hindi.
+- 🏃 **Exercise & mood today**: how hard to exercise outdoors right now. It follows CPCB's health advice
+  per band and the US EPA's guidance on outdoor exertion, and is stricter for sensitive groups.
+  It shows the next window that allows more, indoor alternatives, and **"Gemma, make my 20-min indoor plan"**
+  (gentle and low-impact for asthma, elderly or kids). It also gives mood tips for smoggy days and the
+  Tele-MANAS helpline (14416).
 
 🎤 **Voice in, voice out.** Tap the mic, ask in English or Hindi, and hear the answer read
 aloud. It uses the browser's built-in Web Speech API (Chrome, Edge, Android), so someone who

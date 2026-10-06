@@ -76,6 +76,14 @@ details.profile summary{cursor:pointer;font-weight:600}
 details.safety summary{cursor:pointer;font-weight:600;font-size:17px}
 details.safety li{margin:6px 0}
 #install{display:none}
+.exnow{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.exadvice{font-weight:600;font-size:17px}
+.exup{margin:12px 0 4px;display:flex;flex-direction:column;gap:6px}
+.exup div{padding:8px 12px;border-radius:10px;background:var(--accent-soft);font-size:14px}
+.exh{font-size:15px;margin:16px 0 6px}
+.exlist{margin:0;padding-left:20px}.exlist li{margin:4px 0}
+#indoorout{margin-top:10px;max-width:100%}
+.exhelp{padding:10px 12px;border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:6px;font-size:14px}
 .now{display:flex;gap:16px;flex-wrap:wrap;align-items:center}
 .now .big{font-size:clamp(20px,3.6vw,26px);font-weight:700}
 #status{padding:12px 14px;border-radius:10px;background:var(--accent-soft);margin-bottom:16px}
@@ -148,6 +156,27 @@ a{color:var(--accent)}
         <label class="muted small" id="autospeakwrap" hidden><input type="checkbox" id="autospeak" checked> 🔊 read answers aloud</label>
       </div>
       <p class="muted small" style="margin:8px 0 0">Gemma 4 (open-weight) reads only this page's forecast. Not medical advice.</p>
+    </div>
+
+    <div class="card" id="excard" hidden>
+      <h2>🏃 Exercise &amp; mood today</h2>
+      <div class="exnow">
+        <div id="exband"></div>
+        <div>
+          <div id="exadvice" class="exadvice"></div>
+          <div id="exhealth" class="muted small"></div>
+        </div>
+      </div>
+      <div id="exup" class="exup"></div>
+      <h3 class="exh">🏠 Indoor alternatives</h3>
+      <ul id="exindoor" class="exlist"></ul>
+      <button type="button" id="indoorbtn" class="ghost">✨ Gemma, make my 20-min indoor plan</button>
+      <div id="indoorout" class="msg bot" hidden></div>
+      <h3 class="exh">🧠 Bad air and your mood</h3>
+      <p class="muted small" style="margin-top:0">Studies link polluted, grey days with lower mood and more anxiety. Small habits help:</p>
+      <ul id="exmood" class="exlist"></ul>
+      <p id="exhelp" class="exhelp"></p>
+      <p class="muted small">Based on India's CPCB health advice for each air-quality band and the US EPA's guidance on outdoor exercise. General guidance, not medical advice.</p>
     </div>
 
     <div class="card">
@@ -223,7 +252,9 @@ const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).
 const fmtTime = s => new Date(s.replace(' ','T')).toLocaleString([], {weekday:'short', hour:'2-digit', minute:'2-digit'});
 const pill = (b, txt) => `<span class="pill" style="background:${b.color}">${txt || b.label}</span>`;
 const esc = s => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-const md = s => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+const md = s => esc(s)
+  .replace(/^[ \t]*[*-][ \t]+/gm, m => (m.match(/^[ \t]+/) ? '&nbsp;&nbsp;&nbsp;&nbsp;' : '') + '• ')
+  .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
 function bandOf(pm, bands){ for(const b of bands){ if(b.max===null || pm<=b.max) return b } return bands[bands.length-1] }
 
 const CHIPS = [
@@ -242,11 +273,15 @@ async function load(lat, lon, name){
     if(!r.ok) throw new Error((await r.json()).detail || r.statusText);
     render(await r.json(), name);
     $('#status').hidden = true;
+    $('#indoorout').hidden = true;
+    loadExercise();
   }catch(e){ $('#status').textContent = 'Sorry, the forecast failed: ' + e.message; }
 }
 
+let lastBands = [];
 function render(d, name){
   $('#out').hidden = false;
+  lastBands = d.bands;
   const f = d.forecast, bands = d.bands;
   let where = name;
   if(d.sensor) where += ` · nearest sensor: ${d.sensor.name}, ${(d.sensor.distance_m/1000).toFixed(1)} km away`;
@@ -483,6 +518,44 @@ $('#skyfile').onchange = async e => {
   }catch(err){ out.textContent = 'Sky check failed: ' + err.message; }
   $('#skybtn').disabled = false; e.target.value = '';
 };
+
+// ---------------------------------------------------------------- exercise & mood
+function uiLang(){ return $('#plang').value === 'hi' || ($('#plang').value === '' && voiceLang === 'hi-IN') ? 'hi' : 'en'; }
+const LEVEL_ICON = ['🏠', '🚶', '🚴', '🏃'];
+async function loadExercise(){
+  try{
+    const r = await fetch('/api/exercise', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({lat:place.lat, lon:place.lon, lang:uiLang(), profile:getProfile()})});
+    if(!r.ok) return;
+    const x = await r.json(); if(!x.ok) return;
+    const col = (lastBands.find(b => b.label === x.band) || {}).color || '#888';
+    $('#exband').innerHTML = `<div style="font-size:40px;line-height:1">${LEVEL_ICON[x.level]}</div>`;
+    $('#exadvice').textContent = x.advice;
+    $('#exhealth').innerHTML = `${pill({color:col, label:x.band}, Math.round(x.pm25) + ' µg/m³ · ' + x.band)} ${esc(x.health)}`
+      + (x.sensitive ? ' <span class="ptag">personalised</span>' : '');
+    $('#exup').innerHTML = x.upcoming.filter(u => u.level > x.level).slice(0, 1).map(u =>
+      `<div>${LEVEL_ICON[u.level]} <b>${esc(u.day)}, ${u.start}–${u.end}</b> (≈${Math.round(u.pm25)}, ${esc(u.band)}): ${esc(u.advice)}</div>`).join('');
+    $('#exindoor').innerHTML = x.indoor.map(i => `<li>${i.icon} ${esc(i.text)}</li>`).join('');
+    $('#exmood').innerHTML = x.mood.map(m => `<li>${esc(m)}</li>`).join('');
+    $('#exhelp').textContent = '📞 ' + x.helpline;
+    $('#excard').hidden = false;
+  }catch(e){ /* the rest of the page works without this card */ }
+}
+$('#indoorbtn').onclick = async () => {
+  const out = $('#indoorout'); out.hidden = false; out.innerHTML = '<span class="muted">Gemma is planning your workout…</span>';
+  $('#indoorbtn').disabled = true; let text = '';
+  try{
+    const r = await fetch('/api/indoor-plan', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({lat:place.lat, lon:place.lon, lang:uiLang(), profile:getProfile()})});
+    if(!r.ok) throw new Error(r.statusText);
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    for(;;){ const {value, done} = await reader.read(); if(done) break; text += dec.decode(value, {stream:true}); out.innerHTML = md(text); }
+    if(TTS){ const b = document.createElement('button'); b.className = 'speak'; b.type = 'button'; b.textContent = '🔊';
+      b.title = 'Read aloud'; b.onclick = () => speak(text); out.appendChild(b); }
+  }catch(e){ out.textContent = 'Could not make a plan right now: ' + e.message; }
+  $('#indoorbtn').disabled = false;
+};
+$('#profilebox').addEventListener('change', () => { if(!$('#out').hidden) loadExercise(); });
 
 // ---------------------------------------------------------------- installable app + offline
 if('serviceWorker' in navigator){

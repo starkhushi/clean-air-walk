@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import data, forecast, llm, sky
+from . import data, forecast, health, llm, sky
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE_TTL_S = 30 * 60
@@ -112,6 +112,33 @@ def api_sky(body: Sky) -> dict:
         return sky.check(body.image, fc, body.lang)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+
+
+class Plan(BaseModel):
+    lat: float = Field(DEFAULT["lat"], ge=-90, le=90)
+    lon: float = Field(DEFAULT["lon"], ge=-180, le=180)
+    lang: str = Field("en", max_length=8)
+    profile: dict = Field(default_factory=dict)
+
+
+@app.post("/api/exercise")
+def api_exercise(body: Plan) -> dict:
+    try:
+        return health.plan(get_forecast(body.lat, body.lon), body.profile, body.lang)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"exercise plan failed: {e}") from e
+
+
+@app.post("/api/indoor-plan")
+def api_indoor_plan(body: Plan) -> StreamingResponse:
+    try:
+        fc = get_forecast(body.lat, body.lon)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"forecast failed: {e}") from e
+    lang = body.lang if body.lang in ("en", "hi", "hinglish") else "en"
+    return StreamingResponse(health.stream_indoor_plan(fc, body.profile, lang),
+                             media_type="text/plain; charset=utf-8",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 # ---- installable app (PWA): manifest + service worker must be served from the root scope
