@@ -13,6 +13,15 @@ plain English, Hindi or Hinglish:
 Gemma 4 answers with one specific day and time, the expected PM2.5, a backup, and a
 short health note.
 
+**More features**
+
+- ⚙️ **My profile**: asthma, going out with elderly people or kids, usual free hours, favourite
+  activity and language. It's saved only in your browser. The question always wins, and the profile fills the gaps.
+- 📷 **Sky check**: photograph the sky, and Gemma 4 vision rates the haze and compares it with the
+  forecast for this hour, flagging fog, cloud or dusk that can look like smog.
+- 📲 **Installable and offline**: add it to your home screen. The last forecast still shows offline.
+- 🫁 **If you feel unwell outside**: plain safety steps in English and Hindi.
+
 🎤 **Voice in, voice out.** Tap the mic, ask in English or Hindi, and hear the answer read
 aloud. It uses the browser's built-in Web Speech API (Chrome, Edge, Android), so someone who
 doesn't type, like a grandparent, can just ask.
