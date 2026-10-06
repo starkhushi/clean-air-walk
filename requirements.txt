@@ -1,0 +1,7 @@
+# torch is installed separately from the CPU-only index (see render.yaml) to keep the build small.
+tabpfn==9.1.0
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+requests>=2.31
+pandas>=2.1
+numpy>=1.26

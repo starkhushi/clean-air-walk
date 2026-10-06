@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clean Air Walk</title>
+<meta name="description" content="Find the cleanest hours this week to go outside, using your nearest real air sensor and the open-weight TabPFN model.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#f4f6f1; --card:#ffffff; --ink:#1d2a22; --muted:#5d6b62; --line:#dde3da;
+  --accent:#2e7d4f; --accent-soft:#e3f1e8; --warn:#c2472f;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#111613; --card:#1a211c; --ink:#e7eee9; --muted:#9aa89f; --line:#2b352e;
+    --accent:#5fc28a; --accent-soft:#1f3327; --warn:#ef7a62;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Inter,system-ui,sans-serif}
+main{max-width:980px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:clamp(26px,5vw,38px);margin:0 0 4px;letter-spacing:-.02em}
+.sub{color:var(--muted);margin:0 0 20px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;position:relative}
+.bar input{flex:1 1 220px;padding:11px 14px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font:inherit}
+button{padding:11px 16px;border-radius:10px;border:1px solid var(--accent);background:var(--accent);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+button.ghost{background:transparent;color:var(--accent)}
+#suggest{position:absolute;top:48px;left:0;right:0;background:var(--card);border:1px solid var(--line);border-radius:10px;z-index:5;display:none;max-width:560px}
+#suggest div{padding:10px 14px;cursor:pointer}#suggest div:hover{background:var(--accent-soft)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px}
+.hero{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}
+.hero .big{font-size:clamp(22px,4vw,30px);font-weight:700;margin:2px 0}
+.pill{display:inline-block;padding:3px 10px;border-radius:999px;color:#fff;font-weight:600;font-size:13px}
+.muted{color:var(--muted)}.small{font-size:13px}
+.days{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
+.day{border:1px solid var(--line);border-radius:12px;padding:12px}
+.day h3{margin:0 0 6px;font-size:15px}
+.day .t{font-size:20px;font-weight:700}
+.chartbox{position:relative;height:300px}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+td,th{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left}
+td.num,th.num{text-align:right}
+.win{color:var(--accent);font-weight:700}
+#status{padding:14px;border-radius:10px;background:var(--accent-soft);margin-bottom:16px}
+footer{color:var(--muted);font-size:13px;margin-top:28px}
+a{color:var(--accent)}
+@media (max-width:560px){.hero{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Clean Air Walk 🌿</h1>
+  <p class="sub">When is the air clean enough to touch grass this week? Forecast from your nearest real sensor, corrected by an open-weight AI model.</p>
+
+  <div class="bar">
+    <input id="q" placeholder="Search a city or area, e.g. Ghaziabad, Noida, Lucknow" autocomplete="off">
+    <button id="loc" class="ghost" title="Use my location">📍 Near me</button>
+    <div id="suggest"></div>
+  </div>
+
+  <div id="status">Loading the forecast for Ghaziabad…</div>
+
+  <section id="out" hidden>
+    <div class="card hero">
+      <div>
+        <div class="muted small" id="place"></div>
+        <div class="big" id="verdict"></div>
+        <div class="muted" id="verdict2"></div>
+      </div>
+      <div id="nowpill"></div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;font-size:18px">Best 2-hour window each day</h2>
+      <div class="days" id="days"></div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;font-size:18px">PM2.5 forecast, next 5 days</h2>
+      <p class="muted small" id="chartnote"></p>
+      <div class="chartbox"><canvas id="chart"></canvas></div>
+    </div>
+
+    <div class="card" id="btcard" hidden>
+      <h2 style="margin-top:0;font-size:18px">Does the AI actually help? Last 72 hours, checked against the real sensor</h2>
+      <table>
+        <thead><tr><th>Forecast</th><th class="num">Average error (µg/m³)</th></tr></thead>
+        <tbody id="bt"></tbody>
+      </table>
+      <p class="muted small" id="btnote"></p>
+      <div class="chartbox" style="height:240px"><canvas id="btchart"></canvas></div>
+    </div>
+  </section>
+
+  <footer>
+    Built with PriorLabs-TabPFN (v2, open weights). Air-quality forecast: Copernicus CAMS via
+    <a href="https://open-meteo.com">Open-Meteo</a>. Ground sensors: <a href="https://openaq.org">OpenAQ</a>.
+    Bands follow India's National AQI PM2.5 breakpoints. Not medical advice.
+    Made for the Hacktoberfest 2026 DEV challenge, week 1: Touch Grass.
+  </footer>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+let chart, btchart;
+
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim()}
+function fmtTime(s){const d=new Date(s.replace(' ','T'));return d.toLocaleString([], {weekday:'short',hour:'2-digit',minute:'2-digit'})}
+function bandOf(pm,bands){for(const b of bands){if(b.max===null||pm<=b.max)return b}return bands[bands.length-1]}
+function pill(b,txt){return `<span class="pill" style="background:${b.color}">${txt||b.label}</span>`}
+
+async function load(lat, lon, name){
+  $('#status').hidden=false;
+  $('#status').textContent=`Fetching sensor data and running TabPFN for ${name}… this can take up to a minute the first time.`;
+  try{
+    const r = await fetch(`/api/forecast?lat=${lat}&lon=${lon}`);
+    if(!r.ok) throw new Error((await r.json()).detail || r.statusText);
+    render(await r.json(), name);
+    $('#status').hidden=true;
+  }catch(e){ $('#status').textContent = 'Sorry, the forecast failed: '+e.message; }
+}
+
+function render(d, name){
+  $('#out').hidden=false;
+  const f=d.forecast, bands=d.bands;
+  const sensor = d.sensor ? `nearest sensor: ${d.sensor.name}, ${(d.sensor.distance_m/1000).toFixed(1)} km away` : 'no ground sensor nearby';
+  $('#place').textContent = `${name} · ${sensor}`;
+
+  const today = d.windows[0];
+  if(today){
+    $('#verdict').innerHTML = `Go out ${today.best.start}–${today.best.end} ${today.weekday.split(' ')[0]==new Date().toLocaleDateString('en-GB',{weekday:'short'})?'today':'on '+today.weekday}`;
+    $('#verdict2').innerHTML = `Expected PM2.5 ≈ ${today.best.pm25} µg/m³ (${today.best.label}). Avoid ${today.worst.start}–${today.worst.end}: ≈ ${today.worst.pm25} (${today.worst.label}).`;
+  }
+  const nowpm = f.pm25[0];
+  $('#nowpill').innerHTML = nowpm!=null ? `<div class="muted small" style="text-align:right">right now</div>${pill(bandOf(nowpm,bands), Math.round(nowpm)+' µg/m³ · '+bandOf(nowpm,bands).label)}` : '';
+
+  $('#days').innerHTML = d.windows.map(w=>`
+    <div class="day">
+      <h3>${w.weekday}</h3>
+      <div class="t">${w.best.start}–${w.best.end}</div>
+      <div>${pill(w.best)} <span class="small muted">≈${w.best.pm25} µg/m³, ${w.best.temp}°C</span></div>
+      <div class="small muted" style="margin-top:6px">worst: ${w.worst.start}–${w.worst.end} (≈${w.worst.pm25})</div>
+    </div>`).join('');
+
+  $('#chartnote').textContent = d.mode==='tabpfn'
+    ? `Green line: TabPFN street-level forecast with an 80% band, trained on ${d.train_rows} recent hours from the sensor. Dashed: the raw global CAMS forecast.`
+    : (d.note || 'No ground sensor nearby, so this shows the raw global CAMS forecast.');
+  const labels=f.time.map(fmtTime), ink=css('--ink'), muted=css('--muted'), line=css('--line'), acc=css('--accent');
+  chart && chart.destroy();
+  chart = new Chart($('#chart'), {type:'line', data:{labels, datasets:[
+    {label:'80% band high', data:f.hi, borderWidth:0, pointRadius:0, fill:'+1', backgroundColor:css('--accent-soft')},
+    {label:'80% band low', data:f.lo, borderWidth:0, pointRadius:0, fill:false},
+    {label:'Clean Air Walk forecast', data:f.pm25, borderColor:acc, borderWidth:2.5, pointRadius:0, tension:.3},
+    {label:'CAMS global model', data:f.cams, borderColor:muted, borderDash:[5,4], borderWidth:1.5, pointRadius:0, tension:.3},
+  ]}, options:{maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+    plugins:{legend:{labels:{color:ink, filter:i=>!i.text.startsWith('80%')}},
+             tooltip:{filter:i=>!i.dataset.label.startsWith('80%')}},
+    scales:{x:{ticks:{color:muted,maxTicksLimit:10},grid:{color:line}},
+            y:{title:{display:true,text:'PM2.5 µg/m³',color:muted},ticks:{color:muted},grid:{color:line},beginAtZero:true}}}});
+
+  const bt=d.backtest;
+  $('#btcard').hidden = !bt;
+  if(bt){
+    const rows=[['TabPFN street-level (this app)',bt.mae_tabpfn],['CAMS + simple bias fix',bt.mae_cams_scaled],['Raw CAMS global model',bt.mae_cams]];
+    const best=Math.min(...rows.map(r=>r[1]));
+    $('#bt').innerHTML = rows.map(([n,v])=>`<tr><td>${n}</td><td class="num ${v===best?'win':''}">${v.toFixed(1)}</td></tr>`).join('');
+    const gain = 100*(1-bt.mae_tabpfn/bt.mae_cams);
+    $('#btnote').textContent = `Trained only on hours before the test window. Error ${gain>=0?'cut by '+gain.toFixed(0)+'%':'up '+(-gain).toFixed(0)+'%'} vs the raw global model. The 80% band caught ${(bt.interval_coverage_80*100).toFixed(0)}% of real readings.`;
+    btchart && btchart.destroy();
+    btchart = new Chart($('#btchart'), {type:'line', data:{labels:bt.series.time.map(fmtTime), datasets:[
+      {label:'Real sensor', data:bt.series.truth, borderColor:ink, borderWidth:2, pointRadius:0},
+      {label:'TabPFN', data:bt.series.tabpfn, borderColor:acc, borderWidth:2, pointRadius:0},
+      {label:'CAMS', data:bt.series.cams, borderColor:muted, borderDash:[5,4], borderWidth:1.5, pointRadius:0},
+    ]}, options:{maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+      plugins:{legend:{labels:{color:ink}}},
+      scales:{x:{ticks:{color:muted,maxTicksLimit:8},grid:{color:line}},y:{ticks:{color:muted},grid:{color:line},beginAtZero:true}}}});
+  }
+}
+
+// search
+let tmr;
+$('#q').addEventListener('input', e=>{
+  clearTimeout(tmr); const q=e.target.value.trim();
+  if(q.length<2){$('#suggest').style.display='none';return}
+  tmr=setTimeout(async()=>{
+    const r=await fetch('/api/geocode?q='+encodeURIComponent(q)); const list=r.ok?await r.json():[];
+    $('#suggest').innerHTML=list.map((p,i)=>`<div data-i="${i}">${p.name}<span class="muted small">, ${[p.admin,p.country].filter(Boolean).join(', ')}</span></div>`).join('');
+    $('#suggest').style.display=list.length?'block':'none';
+    $('#suggest').onclick=ev=>{const el=ev.target.closest('[data-i]'); if(!el)return; const p=list[+el.dataset.i];
+      $('#suggest').style.display='none'; $('#q').value=p.name; load(p.lat,p.lon,p.name);};
+  },300);
+});
+$('#loc').onclick=()=>navigator.geolocation.getCurrentPosition(
+  p=>load(p.coords.latitude.toFixed(4), p.coords.longitude.toFixed(4), 'your location'),
+  ()=>{$('#status').hidden=false;$('#status').textContent='Location permission denied. Search for a place instead.'});
+
+load(28.6692, 77.4538, 'Ghaziabad');
+</script>
+</body>
+</html>
