@@ -13,6 +13,10 @@ plain English, Hindi or Hinglish:
 Gemma 4 answers with one specific day and time, the expected PM2.5, a backup, and a
 short health note.
 
+🎤 **Voice in, voice out.** Tap the mic, ask in English or Hindi, and hear the answer read
+aloud. It uses the browser's built-in Web Speech API (Chrome, Edge, Android), so someone who
+doesn't type, like a grandparent, can just ask.
+
 Built for the [Hacktoberfest 2026 DEV challenge](https://dev.to/challenges/hacktoberfest-week1-2026-10-05),
 week 1: **Touch Grass**.
 

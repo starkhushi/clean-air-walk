@@ -51,6 +51,13 @@ button:disabled{opacity:.6;cursor:wait}
 .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
 .chip{background:var(--accent-soft);color:var(--ink);border:1px solid var(--line);font-weight:500;padding:7px 12px;font-size:14px}
 form.ask{display:flex;gap:8px}
+form.ask input{min-width:0}
+button.voice{padding:11px 12px;flex:0 0 auto}
+#mic.listening{background:#d9452f;border-color:#d9452f;color:#fff;animation:pulse 1.2s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(217,69,47,.5)}50%{box-shadow:0 0 0 8px rgba(217,69,47,0)}}
+.voicebar{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:6px;min-height:20px}
+.speak{background:none;border:none;color:var(--accent);padding:2px 4px;margin-left:6px;font-size:15px;cursor:pointer}
+@media (prefers-reduced-motion: reduce){#mic.listening{animation:none}}
 .now{display:flex;gap:16px;flex-wrap:wrap;align-items:center}
 .now .big{font-size:clamp(20px,3.6vw,26px);font-weight:700}
 #status{padding:12px 14px;border-radius:10px;background:var(--accent-soft);margin-bottom:16px}
@@ -86,9 +93,15 @@ a{color:var(--accent)}
       <div class="chips" id="chips"></div>
       <div id="chat" aria-live="polite"></div>
       <form class="ask" id="askform">
+        <button type="button" id="lang" class="ghost voice" title="Voice language" hidden>EN</button>
+        <button type="button" id="mic" class="ghost voice" title="Speak your question" aria-label="Speak your question" hidden>🎤</button>
         <input id="askq" placeholder="e.g. 5 km run after college, I have mild asthma" autocomplete="off" aria-label="Your question">
         <button id="askbtn">Ask</button>
       </form>
+      <div class="voicebar">
+        <span id="voicehint" class="muted small"></span>
+        <label class="muted small" id="autospeakwrap" hidden><input type="checkbox" id="autospeak" checked> 🔊 read answers aloud</label>
+      </div>
       <p class="muted small" style="margin:8px 0 0">Gemma 4 (open-weight) reads only this page's forecast. Not medical advice.</p>
     </div>
 
@@ -209,8 +222,9 @@ function bubble(role, html){
   el.innerHTML = html; $('#chat').appendChild(el); $('#chat').scrollTop = $('#chat').scrollHeight; return el;
 }
 
-async function ask(q){
+async function ask(q, viaVoice = false){
   q = q.trim(); if(!q) return;
+  stopSpeaking();
   $('#askq').value = ''; $('#askbtn').disabled = true;
   bubble('user', esc(q));
   const out = bubble('bot', '<span class="muted">Gemma is thinking…</span>');
@@ -226,10 +240,85 @@ async function ask(q){
       $('#chat').scrollTop = $('#chat').scrollHeight;
     }
     history.push({role:'user', content:q}, {role:'assistant', content:text});
+    if(TTS){
+      const btn = document.createElement('button');
+      btn.className = 'speak'; btn.type = 'button'; btn.title = 'Read aloud'; btn.setAttribute('aria-label', 'Read this answer aloud');
+      btn.textContent = '🔊'; btn.onclick = () => speak(text);
+      out.appendChild(btn);
+      if(viaVoice || $('#autospeak').checked && voiceUsed) speak(text);
+    }
   }catch(e){ out.textContent = 'Sorry, the assistant failed: ' + e.message; }
   $('#askbtn').disabled = false;
 }
 $('#askform').onsubmit = e => { e.preventDefault(); ask($('#askq').value); };
+
+// ---------------------------------------------------------------- voice
+// Speech in and out with the browser's built-in Web Speech API: no extra service, works in
+// Chrome, Edge and Android Chrome (Hindi included). Hidden where unsupported.
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const TTS = 'speechSynthesis' in window;
+let voiceLang = (navigator.language || '').startsWith('hi') ? 'hi-IN' : 'en-IN';
+let recog = null, listening = false, voiceUsed = false;
+
+function setLang(l){
+  voiceLang = l;
+  $('#lang').textContent = l === 'hi-IN' ? 'हिं' : 'EN';
+  $('#voicehint').textContent = SR ? (l === 'hi-IN' ? 'माइक दबाएँ और हिंदी में पूछें' : 'Tap 🎤 and ask out loud') : '';
+}
+if(SR){
+  $('#mic').hidden = false; $('#lang').hidden = false;
+  $('#lang').onclick = () => setLang(voiceLang === 'hi-IN' ? 'en-IN' : 'hi-IN');
+  $('#mic').onclick = () => {
+    if(listening){ recog && recog.stop(); return; }
+    stopSpeaking();
+    recog = new SR();
+    recog.lang = voiceLang; recog.interimResults = true; recog.maxAlternatives = 1; recog.continuous = false;
+    let finalText = '';
+    recog.onstart = () => { listening = true; $('#mic').classList.add('listening'); $('#voicehint').textContent = voiceLang === 'hi-IN' ? 'सुन रहे हैं…' : 'Listening…'; };
+    recog.onresult = ev => {
+      let interim = '';
+      for(let i = ev.resultIndex; i < ev.results.length; i++){
+        const t = ev.results[i][0].transcript;
+        if(ev.results[i].isFinal) finalText += t; else interim += t;
+      }
+      $('#askq').value = (finalText + interim).trim();
+    };
+    recog.onerror = ev => {
+      $('#voicehint').textContent = ev.error === 'not-allowed' ? 'Microphone permission was blocked. Allow it in the address bar.'
+        : ev.error === 'no-speech' ? "Didn't catch that. Try again." : 'Voice input error: ' + ev.error;
+    };
+    recog.onend = () => {
+      listening = false; $('#mic').classList.remove('listening'); setLang(voiceLang);
+      const q = ($('#askq').value || '').trim();
+      if(finalText.trim() && q){ voiceUsed = true; ask(q, true); }
+    };
+    try{ recog.start(); }catch(e){ $('#voicehint').textContent = 'Voice input unavailable: ' + e.message; }
+  };
+}
+if(TTS) $('#autospeakwrap').hidden = !SR;
+setLang(voiceLang);
+
+function plain(s){ return s.replace(/\*\*(.+?)\*\*/g, '$1').replace(/[*_`#>]/g, '').replace(/\(Gemma is busy[^)]*\)/, '').trim(); }
+function pickVoice(lang){
+  const vs = speechSynthesis.getVoices();
+  return vs.find(v => v.lang === lang) || vs.find(v => v.lang.startsWith(lang.slice(0, 2))) || null;
+}
+function stopSpeaking(){ if(TTS) speechSynthesis.cancel(); }
+function speak(text){
+  if(!TTS) return;
+  stopSpeaking();
+  const t = plain(text);
+  const lang = /[ऀ-ॿ]/.test(t) ? 'hi-IN' : 'en-IN';
+  const voice = pickVoice(lang);
+  // Chrome cuts off long utterances, so speak sentence by sentence.
+  const parts = t.match(/[^.!?।]+[.!?।]*/g) || [t];
+  for(const p of parts){
+    const u = new SpeechSynthesisUtterance(p.trim());
+    u.lang = lang; if(voice) u.voice = voice; u.rate = 1.0;
+    speechSynthesis.speak(u);
+  }
+}
+if(TTS && speechSynthesis.onvoiceschanged !== undefined) speechSynthesis.onvoiceschanged = () => {};
 
 let tmr;
 $('#q').addEventListener('input', e => {
