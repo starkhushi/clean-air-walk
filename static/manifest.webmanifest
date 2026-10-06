@@ -1,0 +1,16 @@
+{
+  "name": "Clean Air Walk",
+  "short_name": "Clean Air",
+  "description": "Find the cleanest time this week to go outside, in English or Hindi, with Gemma 4.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f6f1",
+  "theme_color": "#2e7d4f",
+  "lang": "en-IN",
+  "icons": [
+    { "src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

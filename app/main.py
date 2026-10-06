@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import data, forecast, llm
+from . import data, forecast, llm, sky
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE_TTL_S = 30 * 60
@@ -92,6 +92,38 @@ class Ask(BaseModel):
     lon: float = Field(DEFAULT["lon"], ge=-180, le=180)
     place: str = Field(DEFAULT["name"], max_length=80)
     history: list[dict] = Field(default_factory=list, max_length=12)
+    profile: dict = Field(default_factory=dict)
+
+
+class Sky(BaseModel):
+    image: str = Field(..., max_length=3_500_000)      # data URL, resized in the browser
+    lat: float = Field(DEFAULT["lat"], ge=-90, le=90)
+    lon: float = Field(DEFAULT["lon"], ge=-180, le=180)
+    lang: str = Field("en", max_length=8)
+
+
+@app.post("/api/sky")
+def api_sky(body: Sky) -> dict:
+    try:
+        fc = get_forecast(body.lat, body.lon)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"forecast failed: {e}") from e
+    try:
+        return sky.check(body.image, fc, body.lang)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+# ---- installable app (PWA): manifest + service worker must be served from the root scope
+@app.get("/manifest.webmanifest")
+def manifest() -> FileResponse:
+    return FileResponse(ROOT / "static" / "manifest.webmanifest", media_type="application/manifest+json")
+
+
+@app.get("/sw.js")
+def service_worker() -> FileResponse:
+    return FileResponse(ROOT / "static" / "sw.js", media_type="text/javascript",
+                        headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
 
 
 @app.post("/api/ask")
@@ -104,7 +136,7 @@ def api_ask(body: Ask) -> StreamingResponse:
 
     def gen():
         try:
-            yield from llm.stream_answer(body.question, context, fc, body.history)
+            yield from llm.stream_answer(body.question, context, fc, body.history, body.profile)
         except Exception as e:  # noqa: BLE001
             print("ask failed:", repr(e), flush=True)
             yield "\n\nSorry, something went wrong talking to Gemma. Please try again."

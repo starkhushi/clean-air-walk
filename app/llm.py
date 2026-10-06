@@ -158,6 +158,52 @@ def heuristic_constraints(question: str, fc: dict, history: list[dict]) -> dict:
                 duration_hours=dur, sensitive=sensitive, language=lang)
 
 
+CONDITION_TEXT = {"asthma": "has asthma", "heart_lung": "has a heart or lung condition",
+                  "elderly": "often goes out with an elderly person", "kids": "often goes out with small children",
+                  "pregnant": "is pregnant"}
+ACTIVITY_TEXT = {"walk": "walk", "run": "run", "cycle": "cycling", "cricket": "cricket", "yoga": "outdoor yoga",
+                 "play": "outdoor play"}
+_DURATION_IN_TEXT = re.compile(r"\d+\s*(h\b|hr|hour|min|ghant|घंट|मिनट)|cricket|football|match|क्रिकेट", re.I)
+
+
+def clean_profile(p: dict | None) -> dict:
+    """Validate the on-device profile sent by the browser (never trusted blindly)."""
+    p = p or {}
+    conds = [c for c in (p.get("conditions") or []) if c in CONDITION_TEXT][:5]
+    return dict(conditions=conds,
+                free_from=_int_or_none(p.get("free_from"), 0, 23),
+                free_until=_int_or_none(p.get("free_until"), 1, 24),
+                activity=p.get("activity") if p.get("activity") in ACTIVITY_TEXT else None,
+                duration_min=_int_or_none(p.get("duration_min"), 10, 600))
+
+
+def profile_summary(p: dict) -> str:
+    bits = [CONDITION_TEXT[c] for c in p["conditions"]]
+    if p["free_from"] is not None or p["free_until"] is not None:
+        bits.append(f"is usually free {('from %02d:00' % p['free_from']) if p['free_from'] is not None else ''}"
+                    f"{(' until %02d:00' % p['free_until']) if p['free_until'] is not None else ''}".rstrip())
+    if p["activity"]:
+        dur = f" for about {p['duration_min']} minutes" if p["duration_min"] else ""
+        bits.append(f"usually goes out for a {ACTIVITY_TEXT[p['activity']]}{dur}")
+    return "; ".join(bits)
+
+
+def apply_profile(c: dict, p: dict, question: str) -> dict:
+    """The question always wins; the saved profile only fills gaps."""
+    if p["conditions"]:
+        c["sensitive"] = True
+    if c["earliest_hour"] is None and p["free_from"] is not None:
+        c["earliest_hour"] = p["free_from"]
+    if c["latest_end_hour"] is None and p["free_until"] is not None:
+        c["latest_end_hour"] = p["free_until"]
+    if p["duration_min"] and not _DURATION_IN_TEXT.search(question):
+        c["duration_hours"] = round(p["duration_min"] / 60, 2)
+    generic = {"", "going outside", "going out", "outdoor activity", "go out", "outing", "being outside"}
+    if (c.get("activity") or "").strip().lower() in generic and p["activity"]:
+        c["activity"] = ACTIVITY_TEXT[p["activity"]]
+    return c
+
+
 def extract_constraints(question: str, context: str, history: list[dict], fc: dict) -> dict:
     convo = "".join(f"{m['role'].upper()}: {m['content']}\n" for m in history)
     prompt = (f"{context}\n\nConversation so far:\n{convo or '(none)'}\n"
@@ -280,21 +326,26 @@ def template_answer(opts: list[dict], notes: list[str], c: dict) -> str:
     return txt + "\n\n(Gemma is busy right now, so this is a plain summary of the verified options.)"
 
 
-def stream_answer(question: str, context: str, fc: dict, history: list[dict] | None = None) -> Iterator[str]:
+def stream_answer(question: str, context: str, fc: dict, history: list[dict] | None = None,
+                  profile: dict | None = None) -> Iterator[str]:
     history = _clean_history(history)
     question = question.strip()[:800]
-    key = (question.lower(), fc["lat"], fc["lon"], fc["generated_local"]) if not history else None
+    p = clean_profile(profile)
+    psum = profile_summary(p)
+    key = (question.lower(), fc["lat"], fc["lon"], fc["generated_local"], psum) if not history else None
     if key:
         hit = _answer_cache.get(key)
         if hit and time.time() - hit[0] < ANSWER_TTL_S:
             yield hit[1]
             return
 
-    c = extract_constraints(question, context, history, fc)
+    c = apply_profile(extract_constraints(question, context, history, fc), p, question)
     opts, notes = find_options(fc, c)
     lines = _option_lines(opts, c) if opts else ["(no forecast slots available)"]
     verified = ("VERIFIED OPTIONS (best first):\n" + "\n".join(lines)
                 + ("\nNOTES: " + " ".join(notes) if notes else "")
+                + (f"\nSAVED PROFILE (the person set this on their device; mention it briefly, e.g. "
+                   f"'since you have asthma'): this person {psum}." if psum else "")
                 + f"\nConstraints understood: {json.dumps(c, ensure_ascii=False)}"
                 + f"\nAnswer language: {c['language']}")
     print("constraints", json.dumps(c, ensure_ascii=False), "| options", lines[:2], flush=True)
@@ -334,19 +385,22 @@ class LLMError(RuntimeError):
 RETRY_STATUS = {429, 500, 502, 503, 504}
 
 
-def complete(system: str, prompt: str, max_tokens: int = 300) -> str:
+def complete(system: str, prompt: str, max_tokens: int = 300,
+             images: list[tuple[str, str]] | None = None) -> str:
     try:
-        return "".join(stream(system, prompt, max_tokens=max_tokens, temperature=0.0))
+        return "".join(stream(system, prompt, max_tokens=max_tokens, temperature=0.0, images=images))
     except LLMError as e:
         print("complete failed:", e, flush=True)
         return ""
 
 
-def stream(system: str, prompt: str, max_tokens: int = 600, temperature: float = 0.3) -> Iterator[str]:
+def stream(system: str, prompt: str, max_tokens: int = 600, temperature: float = 0.3,
+           images: list[tuple[str, str]] | None = None) -> Iterator[str]:
+    """images: list of (mime_type, base64_data); Gemma 4 is multimodal."""
     if BACKEND == "openai":
-        yield from _stream_openai(system, prompt, max_tokens, temperature)
+        yield from _stream_openai(system, prompt, max_tokens, temperature, images)
     else:
-        yield from _stream_gemini(system, prompt, max_tokens, temperature)
+        yield from _stream_gemini(system, prompt, max_tokens, temperature, images)
 
 
 def _sse_lines(r: requests.Response) -> Iterator[str]:
@@ -356,11 +410,13 @@ def _sse_lines(r: requests.Response) -> Iterator[str]:
             yield line[5:].strip()
 
 
-def _stream_gemini(system: str, prompt: str, max_tokens: int, temperature: float) -> Iterator[str]:
+def _stream_gemini(system: str, prompt: str, max_tokens: int, temperature: float,
+                   images: list[tuple[str, str]] | None = None) -> Iterator[str]:
     key = os.environ.get("GEMINI_API_KEY")
     if not key:
         raise LLMError("GEMINI_API_KEY not set")
-    body = dict(contents=[dict(role="user", parts=[dict(text=prompt)])],
+    parts = [dict(inlineData=dict(mimeType=m, data=d)) for m, d in (images or [])] + [dict(text=prompt)]
+    body = dict(contents=[dict(role="user", parts=parts)],
                 systemInstruction=dict(parts=[dict(text=system)]),
                 generationConfig=dict(temperature=temperature, maxOutputTokens=max_tokens,
                                       thinkingConfig=dict(thinkingLevel="minimal")))
@@ -399,8 +455,12 @@ def _stream_gemini(system: str, prompt: str, max_tokens: int, temperature: float
     raise LLMError(last or "no Gemma model available")
 
 
-def _stream_openai(system: str, prompt: str, max_tokens: int, temperature: float) -> Iterator[str]:
-    msgs = [dict(role="system", content=system), dict(role="user", content=prompt)]
+def _stream_openai(system: str, prompt: str, max_tokens: int, temperature: float,
+                   images: list[tuple[str, str]] | None = None) -> Iterator[str]:
+    content = prompt if not images else (
+        [dict(type="image_url", image_url=dict(url=f"data:{m};base64,{d}")) for m, d in images]
+        + [dict(type="text", text=prompt)])
+    msgs = [dict(role="system", content=system), dict(role="user", content=content)]
     body = dict(model=LLM_MODEL, messages=msgs, temperature=temperature, max_tokens=max_tokens, stream=True)
     headers = {"Authorization": f"Bearer {os.environ.get('LLM_API_KEY', 'none')}",
                # OpenRouter attribution headers (ignored by llama.cpp / Ollama)

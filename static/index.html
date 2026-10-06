@@ -8,6 +8,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#2e7d4f">
+<link rel="icon" href="/static/icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 <style>
 :root{
   --bg:#f4f6f1; --card:#ffffff; --ink:#1d2a22; --muted:#5d6b62; --line:#dde3da;
@@ -58,6 +62,20 @@ button.voice{padding:11px 12px;flex:0 0 auto}
 .voicebar{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:6px;min-height:20px}
 .speak{background:none;border:none;color:var(--accent);padding:2px 4px;margin-left:6px;font-size:15px;cursor:pointer}
 @media (prefers-reduced-motion: reduce){#mic.listening{animation:none}}
+details.profile{border:1px dashed var(--line);border-radius:12px;padding:10px 14px;margin-bottom:12px}
+details.profile summary{cursor:pointer;font-weight:600}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px 18px;margin-top:10px}
+.pgrid label{display:flex;gap:8px;align-items:center;font-size:14px}
+.pgrid select{padding:7px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit;font-size:14px}
+.ptag{display:inline-block;margin:6px 6px 0 0;padding:2px 9px;border-radius:999px;background:var(--accent-soft);font-size:13px}
+#offline{display:none;padding:10px 14px;border-radius:10px;background:#fff3cd;color:#5c4400;margin-bottom:16px}
+.skyrow{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+#skyprev{max-width:180px;max-height:140px;border-radius:10px;display:none}
+#skyout{flex:1 1 260px}
+#skyout .head{font-weight:700;margin-bottom:4px}
+details.safety summary{cursor:pointer;font-weight:600;font-size:17px}
+details.safety li{margin:6px 0}
+#install{display:none}
 .now{display:flex;gap:16px;flex-wrap:wrap;align-items:center}
 .now .big{font-size:clamp(20px,3.6vw,26px);font-weight:700}
 #status{padding:12px 14px;border-radius:10px;background:var(--accent-soft);margin-bottom:16px}
@@ -73,9 +91,11 @@ a{color:var(--accent)}
   <div class="bar">
     <input id="q" placeholder="Change place: Ghaziabad, Noida, Lucknow…" autocomplete="off" aria-label="Search a place">
     <button id="loc" class="ghost" title="Use my location">📍 Near me</button>
+    <button id="install" class="ghost" title="Install as an app">📲 Install app</button>
     <div id="suggest"></div>
   </div>
 
+  <div id="offline">📴 You're offline. Showing the last saved forecast; Gemma and the sky check need internet.</div>
   <div id="status">Loading the forecast for Ghaziabad…</div>
 
   <section id="out" hidden>
@@ -90,6 +110,31 @@ a{color:var(--accent)}
 
     <div class="card">
       <h2>Ask Gemma 🌱</h2>
+      <details class="profile" id="profilebox">
+        <summary>⚙️ My profile <span class="muted small" id="psum">(optional, saved only on this device)</span></summary>
+        <div class="pgrid">
+          <label><input type="checkbox" name="cond" value="asthma"> I have asthma</label>
+          <label><input type="checkbox" name="cond" value="heart_lung"> Heart or lung condition</label>
+          <label><input type="checkbox" name="cond" value="elderly"> I go out with an elderly person</label>
+          <label><input type="checkbox" name="cond" value="kids"> I go out with small children</label>
+          <label><input type="checkbox" name="cond" value="pregnant"> I'm pregnant</label>
+          <label>Usually free from
+            <select id="pfrom"><option value="">any time</option></select></label>
+          <label>until
+            <select id="puntil"><option value="">any time</option></select></label>
+          <label>Usual activity
+            <select id="pact"><option value="">—</option><option value="walk">Walk</option><option value="run">Run</option>
+              <option value="cycle">Cycling</option><option value="cricket">Cricket</option><option value="yoga">Outdoor yoga</option>
+              <option value="play">Kids' play</option></select></label>
+          <label>for
+            <select id="pdur"><option value="">—</option><option value="20">20 min</option><option value="30">30 min</option>
+              <option value="45">45 min</option><option value="60">1 hour</option><option value="90">1.5 hours</option>
+              <option value="120">2 hours</option><option value="180">3 hours</option></select></label>
+          <label>Language
+            <select id="plang"><option value="">auto</option><option value="en">English</option><option value="hi">हिंदी</option></select></label>
+        </div>
+        <div id="ptags"></div>
+      </details>
       <div class="chips" id="chips"></div>
       <div id="chat" aria-live="polite"></div>
       <form class="ask" id="askform">
@@ -106,6 +151,19 @@ a{color:var(--accent)}
     </div>
 
     <div class="card">
+      <h2>📷 Sky check: your eyes vs the forecast</h2>
+      <p class="muted small" style="margin-top:0">Take a photo of the sky or a distant view. Gemma 4 rates the haze it sees and compares it with the forecast for right now.</p>
+      <div class="skyrow">
+        <div>
+          <input type="file" id="skyfile" accept="image/*" capture="environment" hidden>
+          <button type="button" id="skybtn">📷 Check the sky</button>
+          <div style="margin-top:10px"><img id="skyprev" alt="your sky photo"></div>
+        </div>
+        <div id="skyout" class="muted small">Works best in daylight, pointing at the horizon or buildings far away. Fog, cloud and dusk can look like smog.</div>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>Best 2-hour window each day</h2>
       <div class="days" id="days"></div>
     </div>
@@ -113,6 +171,33 @@ a{color:var(--accent)}
     <div class="card">
       <h2>PM2.5 forecast, next 5 days</h2>
       <div class="chartbox"><canvas id="chart"></canvas></div>
+    </div>
+
+    <div class="card">
+      <details class="safety" id="safety">
+        <summary>🫁 If you feel unwell outside in bad air <span class="muted small">(English / हिंदी)</span></summary>
+        <div id="safety-en">
+          <ul>
+            <li><b>Stop and slow down.</b> Harder breathing pulls in more polluted air. Walk instead of running.</li>
+            <li><b>Move indoors</b> or into a closed car or building, away from busy roads.</li>
+            <li><b>If you have asthma</b>, use your reliever inhaler as your doctor has told you, and follow your asthma action plan.</li>
+            <li><b>Drink water</b> and rest until breathing feels normal.</li>
+            <li><b>Get urgent medical help</b> (call 112) if you have severe breathlessness, chest pain or tightness, blue or grey lips, confusion, or an inhaler that isn't helping.</li>
+            <li><b>Next time</b>: pick a Good or Satisfactory window, go shorter or lighter, and consider a well-fitted N95 mask. Cloth and loose surgical masks do little against PM2.5.</li>
+          </ul>
+        </div>
+        <div id="safety-hi" lang="hi">
+          <ul>
+            <li><b>रुकें और धीमे हो जाएँ।</b> तेज़ साँस लेने से ज़्यादा प्रदूषित हवा अंदर जाती है। दौड़ने की बजाय चलें।</li>
+            <li><b>घर के अंदर</b> या किसी बंद इमारत या गाड़ी में जाएँ, व्यस्त सड़कों से दूर।</li>
+            <li><b>अगर आपको अस्थमा है</b>, तो डॉक्टर के बताए अनुसार अपना रिलीवर इनहेलर लें।</li>
+            <li><b>पानी पिएँ</b> और साँस सामान्य होने तक आराम करें।</li>
+            <li><b>तुरंत डॉक्टरी मदद लें</b> (112 पर कॉल करें) अगर बहुत ज़्यादा साँस फूले, सीने में दर्द या जकड़न हो, होंठ नीले या भूरे पड़ें, घबराहट या उलझन हो, या इनहेलर से आराम न मिले।</li>
+            <li><b>अगली बार</b>: अच्छे या संतोषजनक समय पर जाएँ, कम देर या हल्की गतिविधि करें, और अच्छी तरह फ़िट N95 मास्क पहनें। कपड़े या ढीले सर्जिकल मास्क PM2.5 से बहुत कम बचाते हैं।</li>
+          </ul>
+        </div>
+        <p class="muted small">General guidance, not medical advice. Follow your own doctor's plan.</p>
+      </details>
     </div>
 
     <div class="card" id="acccard" hidden>
@@ -231,7 +316,7 @@ async function ask(q, viaVoice = false){
   let text = '';
   try{
     const r = await fetch('/api/ask', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({question:q, lat:place.lat, lon:place.lon, place:place.name, history})});
+      body: JSON.stringify({question:q, lat:place.lat, lon:place.lon, place:place.name, history, profile:getProfile()})});
     if(!r.ok) throw new Error(r.statusText);
     const reader = r.body.getReader(), dec = new TextDecoder();
     for(;;){
@@ -319,6 +404,96 @@ function speak(text){
   }
 }
 if(TTS && speechSynthesis.onvoiceschanged !== undefined) speechSynthesis.onvoiceschanged = () => {};
+
+// ---------------------------------------------------------------- my profile (this device only)
+const PKEY = 'caw-profile-v1';
+const COND_LABEL = {asthma:'asthma', heart_lung:'heart/lung', elderly:'with elderly', kids:'with kids', pregnant:'pregnant'};
+const ACT_LABEL = {walk:'walk', run:'run', cycle:'cycling', cricket:'cricket', yoga:'yoga', play:"kids' play"};
+for(let h = 5; h <= 22; h++){
+  const t = `${String(h).padStart(2,'0')}:00`;
+  $('#pfrom').insertAdjacentHTML('beforeend', `<option value="${h}">${t}</option>`);
+  $('#puntil').insertAdjacentHTML('beforeend', `<option value="${h}">${t}</option>`);
+}
+function readStore(){ try{ return JSON.parse(localStorage.getItem(PKEY) || '{}'); }catch(e){ return {}; } }
+function writeStore(p){ try{ localStorage.setItem(PKEY, JSON.stringify(p)); }catch(e){} }
+function getProfile(){
+  const num = v => v === '' ? null : +v;
+  return {
+    conditions: [...document.querySelectorAll('input[name=cond]:checked')].map(i => i.value),
+    free_from: num($('#pfrom').value), free_until: num($('#puntil').value),
+    activity: $('#pact').value || null, duration_min: num($('#pdur').value), language: $('#plang').value || null,
+  };
+}
+function showProfile(){
+  const p = getProfile(), tags = [];
+  p.conditions.forEach(c => tags.push(COND_LABEL[c]));
+  if(p.free_from !== null || p.free_until !== null) tags.push(`free ${p.free_from ?? '…'}–${p.free_until ?? '…'}h`);
+  if(p.activity) tags.push(ACT_LABEL[p.activity] + (p.duration_min ? ` ${p.duration_min} min` : ''));
+  if(p.language) tags.push(p.language === 'hi' ? 'हिंदी' : 'English');
+  $('#ptags').innerHTML = tags.map(t => `<span class="ptag">${esc(t)}</span>`).join('');
+  $('#psum').textContent = tags.length ? `· answers personalised: ${tags.join(', ')}` : '(optional, saved only on this device)';
+  // Safety tips: show the chosen language, or both on auto.
+  $('#safety-en').hidden = p.language === 'hi'; $('#safety-hi').hidden = p.language === 'en';
+}
+(function initProfile(){
+  const p = readStore();
+  (p.conditions || []).forEach(c => { const el = document.querySelector(`input[name=cond][value="${c}"]`); if(el) el.checked = true; });
+  if(p.free_from != null) $('#pfrom').value = p.free_from;
+  if(p.free_until != null) $('#puntil').value = p.free_until;
+  if(p.activity) $('#pact').value = p.activity;
+  if(p.duration_min) $('#pdur').value = p.duration_min;
+  if(p.language) $('#plang').value = p.language;
+  if(p.language && SR) setLang(p.language === 'hi' ? 'hi-IN' : 'en-IN');
+  showProfile();
+  $('#profilebox').addEventListener('change', () => {
+    const np = getProfile(); writeStore(np); showProfile();
+    if(np.language && SR) setLang(np.language === 'hi' ? 'hi-IN' : 'en-IN');
+  });
+})();
+
+// ---------------------------------------------------------------- sky check (Gemma 4 vision)
+function resizeImage(file, maxSide = 1024){
+  return new Promise((resolve, reject) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const s = Math.min(1, maxSide / Math.max(img.width, img.height));
+      const c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+      resolve(c.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read that image.')); };
+    img.src = url;
+  });
+}
+$('#skybtn').onclick = () => $('#skyfile').click();
+$('#skyfile').onchange = async e => {
+  const f = e.target.files[0]; if(!f) return;
+  const out = $('#skyout'); $('#skybtn').disabled = true;
+  try{
+    const dataUrl = await resizeImage(f);
+    $('#skyprev').src = dataUrl; $('#skyprev').style.display = 'block';
+    out.className = ''; out.innerHTML = '<span class="muted">Gemma is looking at your sky…</span>';
+    const lang = $('#plang').value === 'hi' || voiceLang === 'hi-IN' ? 'hi' : 'en';
+    const r = await fetch('/api/sky', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({image:dataUrl, lat:place.lat, lon:place.lon, lang})});
+    const j = await r.json();
+    if(!r.ok) throw new Error(j.detail || r.statusText);
+    out.innerHTML = j.ok ? `<div class="head">${esc(j.headline)}</div><div>${esc(j.message)}</div>` : esc(j.message);
+    if(j.ok && TTS && voiceUsed) speak(j.headline + ' ' + j.message);
+  }catch(err){ out.textContent = 'Sky check failed: ' + err.message; }
+  $('#skybtn').disabled = false; e.target.value = '';
+};
+
+// ---------------------------------------------------------------- installable app + offline
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
+let installEvt = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; $('#install').style.display = 'inline-block'; });
+$('#install').onclick = async () => { if(!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; $('#install').style.display = 'none'; };
+window.addEventListener('appinstalled', () => { $('#install').style.display = 'none'; });
+function netStatus(){ $('#offline').style.display = navigator.onLine ? 'none' : 'block'; }
+window.addEventListener('online', netStatus); window.addEventListener('offline', netStatus); netStatus();
 
 let tmr;
 $('#q').addEventListener('input', e => {
